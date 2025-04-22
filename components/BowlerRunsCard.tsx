@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/authStore"; // Adjust the import path as needed
 
 interface Player {
   name: string;
@@ -30,6 +31,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   matchId,
   userId 
 }) => {
+  const { token, user, isAuthenticated } = useAuthStore();
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -45,6 +47,10 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
   const handlePlaceBet = async () => {
     if (!selectedPlayer || !userId || !matchId) return;
+    if (!isAuthenticated || !token) {
+      toast.error("Please login to place bets");
+      return;
+    }
 
     setIsProcessing(true);
 
@@ -54,8 +60,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Add authorization header if needed
-            // "Authorization": `Bearer ${token}`
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify({
             userId,
@@ -68,7 +73,10 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         }).then(async (response) => {
           const data: BetResponse = await response.json();
           if (!response.ok) {
-            throw new Error(data.error || "Failed to place bet");
+            if (response.status === 400 && data.message === "Insufficient balance") {
+              throw new Error("Insufficient balance to place this bet");
+            }
+            throw new Error(data.error || data.message || "Failed to place bet");
           }
           return data;
         }),
@@ -76,6 +84,9 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
           loading: 'Placing your bowler runs bet...',
           success: (data) => {
             closeModal();
+            if (data.newBalance !== undefined) {
+              useAuthStore.getState().updateUserBalance(data.newBalance);
+            }
             return `${data.message}. New balance: ₹${data.newBalance}`;
           },
           error: (error) => error.message || "Bowler runs bet placement failed",
@@ -127,7 +138,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               <button
                 onClick={() => handleBetClick(player)}
                 className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-4 py-1 rounded-full font-medium transition"
-                disabled={isProcessing}
+                disabled={isProcessing || !isAuthenticated}
               >
                 100
               </button>
@@ -186,7 +197,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               <button
                 onClick={handlePlaceBet}
                 className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
-                disabled={isProcessing}
+                disabled={isProcessing || !isAuthenticated}
               >
                 {isProcessing ? 'Processing...' : 'Place Bet'}
               </button>

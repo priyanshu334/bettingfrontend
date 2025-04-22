@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/authStore"; // Adjust the import path as needed
 
 type TeamOdds = {
   team: string;
@@ -56,7 +57,8 @@ const BetDialog: React.FC<{
   onClose: () => void;
   onPlaceBet: (amount: string) => void;
   isProcessing: boolean;
-}> = ({ title, currentStake, oddsValue, onClose, onPlaceBet, isProcessing }) => {
+  isAuthenticated: boolean;
+}> = ({ title, currentStake, oddsValue, onClose, onPlaceBet, isProcessing, isAuthenticated }) => {
   const [amount, setAmount] = useState(currentStake);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -111,7 +113,7 @@ const BetDialog: React.FC<{
                 value={amount}
                 onChange={handleAmountChange}
                 className="w-full p-2 border border-gray-300 rounded"
-                disabled={isProcessing}
+                disabled={isProcessing || !isAuthenticated}
               />
             </div>
           </div>
@@ -122,7 +124,7 @@ const BetDialog: React.FC<{
                 key={val}
                 onClick={() => handleQuickAmountAdd(val)}
                 className="bg-orange-400 hover:bg-orange-500 text-white font-bold py-3 rounded text-lg disabled:opacity-50"
-                disabled={isProcessing}
+                disabled={isProcessing || !isAuthenticated}
               >
                 +{val / 1000}k
               </button>
@@ -135,7 +137,7 @@ const BetDialog: React.FC<{
                 key={val}
                 onClick={() => handleQuickAmountAdd(val)}
                 className="bg-orange-400 hover:bg-orange-500 text-white font-bold py-3 rounded text-lg disabled:opacity-50"
-                disabled={isProcessing}
+                disabled={isProcessing || !isAuthenticated}
               >
                 +{val / 1000}k
               </button>
@@ -148,7 +150,7 @@ const BetDialog: React.FC<{
                 key={val}
                 onClick={() => handleQuickAmountAdd(val)}
                 className="bg-orange-400 hover:bg-orange-500 text-white font-bold py-3 rounded text-lg disabled:opacity-50"
-                disabled={isProcessing}
+                disabled={isProcessing || !isAuthenticated}
               >
                 +{val / 1000}k
               </button>
@@ -159,16 +161,16 @@ const BetDialog: React.FC<{
             <button 
               onClick={handleClear}
               className="bg-blue-500 text-white py-3 text-xl font-bold disabled:opacity-50"
-              disabled={isProcessing}
+              disabled={isProcessing || !isAuthenticated}
             >
               Clear
             </button>
             <button 
               onClick={() => onPlaceBet(amount)}
               className="bg-green-700 hover:bg-green-800 text-white py-3 text-xl font-bold disabled:opacity-50"
-              disabled={isProcessing}
+              disabled={isProcessing || !isAuthenticated}
             >
-              {isProcessing ? 'Processing...' : 'Place Bet'}
+              {isProcessing ? 'Processing...' : isAuthenticated ? 'Place Bet' : 'Login to Bet'}
             </button>
           </div>
           
@@ -188,6 +190,7 @@ const MatchCard: React.FC<MatchOddsProps> = ({
   matchId,
   userId
 }) => {
+  const { token, isAuthenticated } = useAuthStore();
   const [showBetDialog, setShowBetDialog] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentBetData, setCurrentBetData] = useState({
@@ -201,6 +204,10 @@ const MatchCard: React.FC<MatchOddsProps> = ({
 
   const handlePlaceBet = async (amount: string) => {
     if (!userId || !matchId) return;
+    if (!isAuthenticated || !token) {
+      toast.error("Please login to place bets");
+      return;
+    }
     
     setIsProcessing(true);
 
@@ -209,6 +216,7 @@ const MatchCard: React.FC<MatchOddsProps> = ({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
           userId,
@@ -224,7 +232,10 @@ const MatchCard: React.FC<MatchOddsProps> = ({
       const data: BetResponse = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to place bet");
+        if (response.status === 400 && data.message === "Insufficient balance") {
+          throw new Error("Insufficient balance to place this bet");
+        }
+        throw new Error(data.error || data.message || "Failed to place bet");
       }
 
       toast.success(data.message, {
@@ -249,6 +260,11 @@ const MatchCard: React.FC<MatchOddsProps> = ({
     betType: string,
     teamId: string
   ) => {
+    if (!isAuthenticated) {
+      toast.error("Please login to place bets");
+      return;
+    }
+
     setCurrentBetData({
       title,
       stake,
@@ -429,6 +445,7 @@ const MatchCard: React.FC<MatchOddsProps> = ({
             onClose={() => setShowBetDialog(false)}
             onPlaceBet={handlePlaceBet}
             isProcessing={isProcessing}
+            isAuthenticated={isAuthenticated}
           />
         )}
       </div>
