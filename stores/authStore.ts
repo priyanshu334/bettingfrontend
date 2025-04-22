@@ -23,29 +23,35 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       user: null,
       isAuthenticated: false,
-      
+
       login: (data) => {
         set({
           token: data.token,
           user: data.user,
           isAuthenticated: true,
         });
-        
-        // Store token in localStorage for API requests
+
+        // LocalStorage for client
         localStorage.setItem('authToken', data.token);
+
+        // Cookie for middleware (client-side)
+        document.cookie = `token=${data.token}; path=/; secure; sameSite=lax`;
       },
-      
+
       logout: () => {
         set({
           token: null,
           user: null,
           isAuthenticated: false,
         });
-        
-        // Remove token from localStorage
+
+        // Clean up localStorage
         localStorage.removeItem('authToken');
+
+        // Expire the cookie
+        document.cookie = 'token=; path=/; max-age=0';
       },
-      
+
       updateUserBalance: (newBalance) => {
         set((state) => ({
           user: state.user ? { ...state.user, money: newBalance } : null,
@@ -53,8 +59,8 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'auth-storage', // name for the persisted store
-      partialize: (state) => ({ 
+      name: 'auth-storage',
+      partialize: (state) => ({
         token: state.token,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
