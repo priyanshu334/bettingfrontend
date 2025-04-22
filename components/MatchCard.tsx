@@ -205,7 +205,7 @@ const MatchCard: React.FC<MatchOddsProps> = ({
     setIsProcessing(true);
 
     try {
-      const response = await fetch("/api/bets/place", {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/RunsAndWickets/place`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

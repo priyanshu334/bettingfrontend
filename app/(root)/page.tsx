@@ -83,14 +83,14 @@ export default function LandingPage() {
               </p>
             </div>
             <div className="shrink-0">
-              <Link href="/matches">
+              <Link href="/cricket">
                 <Button className="text-base px-6 py-6 rounded-xl shadow-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 transition border-0 font-medium group flex items-center">
                   <Zap className="mr-2 w-5 h-5" />
                   Bet Now
                   <ChevronRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Button>
               </Link>
-              <Link href="/matches">
+              <Link href="/games">
                 <Button className="text-base px-6 py-6 mt-5 rounded-xl shadow-xl bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 transition border-0 font-medium group flex items-center">
                   <Zap className="mr-2 w-5 h-5" />
                   Play Games
@@ -223,7 +223,7 @@ export default function LandingPage() {
                 Sign Up Now
               </Button>
             </Link>
-            <Link href="/matches">
+            <Link href="/cricket">
               <Button className="text-base px-8 py-6 rounded-xl shadow-lg bg-white/10 border border-white/50 text-white hover:bg-white/20 transition font-medium">
                 See All Matches
               </Button>

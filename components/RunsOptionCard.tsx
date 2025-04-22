@@ -76,7 +76,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
     try {
       const betCondition = selectedChoice === "Yes" ? "true" : "false";
       
-      const response = await axios.post("/api/bets/place", {
+      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/RunsAndWickets/place`, {
         userId,
         matchId,
         teamId,

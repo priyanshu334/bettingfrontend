@@ -50,7 +50,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
     try {
       toast.promise(
-        fetch("/api/bets/bowler-runs", {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bowlerruns/place`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
