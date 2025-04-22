@@ -35,70 +35,132 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
 
   const handleBetClick = (player: Player) => {
     setSelectedPlayer(player);
+    // Reset debug info when selecting a new player
+    setDebugInfo(null);
   };
 
   const closeModal = () => {
     setSelectedPlayer(null);
     setAmount(100);
+    setDebugInfo(null);
+  };
+
+  const logDebugInfo = (message: string, data?: any) => {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}`;
+    
+    console.log(logMessage, data);
+    
+    setDebugInfo(prev => {
+      const newInfo = prev 
+        ? `${prev}\n${logMessage}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`
+        : `${logMessage}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`;
+      return newInfo;
+    });
   };
 
   const handlePlaceBet = async () => {
-    if (!selectedPlayer || !userId || !matchId) return;
+    if (!selectedPlayer || !userId || !matchId) {
+      logDebugInfo("Missing required data", { selectedPlayer, userId, matchId });
+      toast.error("Missing required bet information");
+      return;
+    }
+    
     if (!isAuthenticated || !token) {
+      logDebugInfo("Authentication issue", { isAuthenticated, hasToken: !!token });
       toast.error("Please login to place bets");
       return;
     }
 
     setIsProcessing(true);
+    logDebugInfo("Starting bet placement", { 
+      userId, 
+      matchId, 
+      bowlerName: selectedPlayer.name,
+      teamName: selectedPlayer.teamName,
+      predictedRunsConceded: selectedPlayer.runsConceded,
+      betAmount: amount
+    });
+
+    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/bowlerruns/place`;
+    logDebugInfo("API URL", apiUrl);
 
     try {
-      toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bowlerruns/place`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            userId,
-            matchId,
-            teamName: selectedPlayer.teamName,
-            bowlerName: selectedPlayer.name,
-            predictedRunsConceded: selectedPlayer.runsConceded,
-            betAmount: amount
-          })
-        }).then(async (response) => {
-          const data: BetResponse = await response.json();
-          if (!response.ok) {
-            if (response.status === 400 && data.message === "Insufficient balance") {
-              throw new Error("Insufficient balance to place this bet");
-            }
-            throw new Error(data.error || data.message || "Failed to place bet");
-          }
-          return data;
-        }),
-        {
-          loading: 'Placing your bowler runs bet...',
-          success: (data) => {
-            closeModal();
-            if (data.newBalance !== undefined) {
-              useAuthStore.getState().updateUserBalance(data.newBalance);
-            }
-            return `${data.message}. New balance: ₹${data.newBalance}`;
-          },
-          error: (error) => error.message || "Bowler runs bet placement failed",
+      const requestBody = {
+        userId,
+        matchId,
+        teamName: selectedPlayer.teamName,
+        bowlerName: selectedPlayer.name,
+        predictedRunsConceded: selectedPlayer.runsConceded,
+        betAmount: amount
+      };
+      
+      logDebugInfo("Request payload", requestBody);
+
+      const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      logDebugInfo("Response status", { status: response.status, statusText: response.statusText });
+      
+      const responseData: BetResponse = await response.json();
+      logDebugInfo("Response data", responseData);
+
+      if (!response.ok) {
+        let errorMessage = responseData.error || responseData.message || "Failed to place bet";
+        
+        if (response.status === 400 && responseData.message === "Insufficient balance") {
+          errorMessage = "Insufficient balance to place this bet";
+        } else if (response.status === 401) {
+          errorMessage = "Authentication failed. Please login again.";
+        } else if (response.status === 403) {
+          errorMessage = "You don't have permission to place this bet.";
+        } else if (response.status === 404) {
+          errorMessage = "Bet endpoint not found. Please check API URL.";
+        } else if (response.status === 500) {
+          errorMessage = "Server error. Please try again later.";
         }
-      );
+        
+        logDebugInfo("Error placing bet", { status: response.status, error: errorMessage });
+        toast.error("Bet Failed", {
+          description: errorMessage
+        });
+      } else {
+        logDebugInfo("Bet placed successfully", responseData);
+        toast.success(`${responseData.message}. New balance: ₹${responseData.newBalance}`);
+        
+        if (responseData.newBalance !== undefined) {
+          useAuthStore.getState().updateUserBalance(responseData.newBalance);
+        }
+        closeModal();
+      }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+      logDebugInfo("Exception occurred", { error: errorMessage });
       console.error("Bet Error:", error);
       toast.error("Bet Failed", {
-        description: error instanceof Error ? error.message : "An unknown error occurred"
+        description: errorMessage
       });
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // Function to copy debug info to clipboard
+  const copyDebugInfo = () => {
+    if (debugInfo) {
+      navigator.clipboard.writeText(debugInfo)
+        .then(() => toast.success("Debug info copied to clipboard"))
+        .catch(err => toast.error("Failed to copy debug info"));
     }
   };
 
@@ -165,8 +227,16 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             <div className="text-sm text-gray-700 mb-2">
               Team: <span className="font-medium">{selectedPlayer.teamName || 'N/A'}</span>
             </div>
-            <div className="text-sm text-gray-700 mb-4">
+            <div className="text-sm text-gray-700 mb-2">
               Predicted Runs: <span className="font-medium">{selectedPlayer.runsConceded}</span>
+            </div>
+            
+            {/* Debug info about authentication state */}
+            <div className="text-xs text-gray-600 mb-4">
+              Auth Status: {isAuthenticated ? 'Logged In' : 'Not Logged In'}
+              {isAuthenticated && token && (
+                <span> (Token: {token.substring(0, 10)}...)</span>
+              )}
             </div>
 
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
@@ -193,7 +263,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               ))}
             </div>
 
-            <div className="flex justify-between gap-3">
+            <div className="flex justify-between gap-3 mb-4">
               <button
                 onClick={handlePlaceBet}
                 className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
@@ -209,6 +279,24 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
                 Cancel
               </button>
             </div>
+
+            {/* Debug Information Section */}
+            {debugInfo && (
+              <div className="mt-4 border-t border-gray-300 pt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-sm font-semibold text-gray-700">Debug Information</h3>
+                  <button 
+                    onClick={copyDebugInfo}
+                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+                  >
+                    Copy
+                  </button>
+                </div>
+                <div className="bg-black text-green-400 p-2 rounded text-xs h-40 overflow-y-auto font-mono whitespace-pre">
+                  {debugInfo}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
