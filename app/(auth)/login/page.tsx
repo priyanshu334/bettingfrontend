@@ -64,7 +64,7 @@ const LoginPage = () => {
       }
 
       toast.success('Login successful! Redirecting...');
-      router.push('/home');
+      router.push('/');
 
     } catch (error) {
       console.error('Login error:', error);
