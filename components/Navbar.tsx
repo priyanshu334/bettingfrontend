@@ -2,87 +2,17 @@
 import React, { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
-
-interface User {
-  userId: string;
-  fullName: string;
-  phone: string;
-  money: number;
-}
+import { useAuthStore } from "@/stores/authStore";
 
 const Navbar: React.FC = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
-
-  const getTokenFromStorage = (): string | null => {
-    try {
-      const token = localStorage.getItem('authToken');
-      console.debug('[Navbar] Token from storage:', token ? 'exists' : 'not found');
-      return token;
-    } catch (error) {
-      console.error('[Navbar] Error accessing localStorage:', error);
-      return null;
-    }
-  };
-
-  useEffect(() => {
-    console.log('[Navbar] Component mounted, starting user fetch process');
-    
-    const fetchUserDetails = async () => {
-      console.log('[Navbar] Starting fetchUserDetails');
-      
-      const token = getTokenFromStorage();
-      if (!token) {
-        console.log('[Navbar] No token found, skipping user fetch');
-        return;
-      }
-
-      try {
-        console.log('[Navbar] Token found, decoding payload');
-        
-        const parts = token.split(".");
-        if (parts.length !== 3) {
-          throw new Error("Invalid token format - expected 3 parts");
-        }
-
-        const base64Url = parts[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const paddedBase64 = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
-        
-        const decodedPayload = JSON.parse(atob(paddedBase64));
-        const userId = decodedPayload?.userId;
-        
-        if (!userId) {
-          throw new Error("userId not found in token payload");
-        }
-
-        const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/user/${userId}`;
-        
-        const res = await fetch(apiUrl, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-
-        const data = await res.json();
-        setUser(data);
-      } catch (err) {
-        console.error('[Navbar] Error in fetchUserDetails:', err);
-        setUser(null);
-        localStorage.removeItem('authToken');
-        sessionStorage.removeItem('user');
-      }
-    };
-
-    fetchUserDetails();
-  }, []);
-
+  
+  // Get auth state from store
+  const { token, user, isAuthenticated, logout } = useAuthStore();
+  
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -97,8 +27,7 @@ const Navbar: React.FC = () => {
   }, []);
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    sessionStorage.removeItem('user');
+    logout();
     window.location.href = "/login";
   };
 
@@ -129,84 +58,113 @@ const Navbar: React.FC = () => {
               Rules
             </Link>
             
-            {/* Balance Card */}
-            <div className="flex items-center space-x-1 p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
-              <div className="px-3 py-1.5 rounded-md bg-indigo-900/60">
-                <div className="flex flex-col">
-                  <span className="text-xs text-blue-200">Balance</span>
-                  <span className="text-white font-medium">₹{user?.money?.toFixed(2) ?? "0.00"}</span>
+            {/* Balance Card - Only show if authenticated */}
+            {isAuthenticated && (
+              <div className="flex items-center space-x-1 p-2 bg-white/10 backdrop-blur-sm rounded-lg border border-white/20">
+                <div className="px-3 py-1.5 rounded-md bg-indigo-900/60">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-blue-200">Balance</span>
+                    <span className="text-white font-medium">₹{user?.money?.toFixed(2) ?? "0.00"}</span>
+                  </div>
+                </div>
+                <div className="px-3 py-1.5 rounded-md bg-indigo-900/60">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-blue-200">Exposure</span>
+                    <span className="text-white font-medium">₹0.00</span>
+                  </div>
                 </div>
               </div>
-              <div className="px-3 py-1.5 rounded-md bg-indigo-900/60">
-                <div className="flex flex-col">
-                  <span className="text-xs text-blue-200">Exposure</span>
-                  <span className="text-white font-medium">₹0.00</span>
-                </div>
-              </div>
-            </div>
+            )}
             
             {/* User Menu */}
             <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center space-x-1 py-2 px-3 rounded-lg bg-white/10 hover:bg-white/20 transition-colors border border-white/20"
-              >
-                <span className="text-white">{user?.fullName ?? "Guest"}</span>
-                <svg
-                  className={`w-4 h-4 text-blue-200 transition-transform duration-300 ${dropdownOpen ? "rotate-180" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl z-50 overflow-hidden border border-gray-100 animate-fadeIn">
-                  <div className="py-2 px-4 bg-gray-50 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-900">{user?.fullName ?? "Guest"}</p>
-                    <p className="text-xs text-gray-500">{user?.phone ?? ""}</p>
-                  </div>
-                  <div className="py-1">
-                    <Link href="/accounts" className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      Account Statement
-                    </Link>
-                    <Link href="/betHistory" className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Bet History
-                    </Link>
-                    <Link href="/rules" className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
-                      Rules
-                    </Link>
-                  </div>
-                  <div className="py-1 border-t border-gray-100">
-                    <Link href="/changePassword" className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
-                      <svg className="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                      Change Password
-                    </Link>
-                    <button
-                      onClick={handleLogout}
-                      className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              {isAuthenticated ? (
+                <>
+                  <button
+                    onClick={() => setDropdownOpen(!dropdownOpen)}
+                    className="flex items-center space-x-1 py-2 px-3 rounded-lg bg-white/10 hover:bg-white/20 transition-colors border border-white/20"
+                  >
+                    <span className="text-white">{user?.fullName ?? "User"}</span>
+                    <svg
+                      className={`w-4 h-4 text-blue-200 transition-transform duration-300 ${dropdownOpen ? "rotate-180" : ""}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      xmlns="http://www.w3.org/2000/svg"
                     >
-                      <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      Sign Out
-                    </button>
-                  </div>
-                </div>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {dropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl z-50 overflow-hidden border border-gray-100 animate-fadeIn">
+                      <div className="py-2 px-4 bg-gray-50 border-b border-gray-100">
+                        <p className="text-sm font-medium text-gray-900">{user?.fullName}</p>
+                        <p className="text-xs text-gray-500">{user?.phone}</p>
+                      </div>
+                      <div className="py-1">
+                        <Link 
+                          href="/accounts" 
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          Account Statement
+                        </Link>
+                        <Link 
+                          href="/betHistory" 
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Bet History
+                        </Link>
+                        <Link 
+                          href="/rules" 
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
+                          Rules
+                        </Link>
+                      </div>
+                      <div className="py-1 border-t border-gray-100">
+                        <Link 
+                          href="/changePassword" 
+                          className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                          onClick={() => setDropdownOpen(false)}
+                        >
+                          <svg className="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                          </svg>
+                          Change Password
+                        </Link>
+                        <button
+                          onClick={handleLogout}
+                          className="flex w-full items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                          </svg>
+                          Sign Out
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Link 
+                  href="/login" 
+                  className="py-2 px-4 rounded-lg bg-white/10 hover:bg-white/20 transition-colors border border-white/20 text-white"
+                >
+                  Login
+                </Link>
               )}
             </div>
           </div>
@@ -237,58 +195,81 @@ const Navbar: React.FC = () => {
         {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div className="md:hidden py-4 border-t border-white/20 animate-fadeIn">
-            <div className="flex justify-between items-center px-4 py-3 bg-white/10 rounded-lg mb-4">
-              <div className="flex flex-col">
-                <span className="text-xs text-blue-200">Balance</span>
-                <span className="text-white font-medium">₹{user?.money?.toFixed(2) ?? "0.00"}</span>
-              </div>
-              <div className="flex flex-col">
-                <span className="text-xs text-blue-200">Exposure</span>
-                <span className="text-white font-medium">₹0.00</span>
-              </div>
-            </div>
+            {isAuthenticated && (
+              <>
+                <div className="flex justify-between items-center px-4 py-3 bg-white/10 rounded-lg mb-4">
+                  <div className="flex flex-col">
+                    <span className="text-xs text-blue-200">Balance</span>
+                    <span className="text-white font-medium">₹{user?.money?.toFixed(2) ?? "0.00"}</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-xs text-blue-200">Exposure</span>
+                    <span className="text-white font-medium">₹0.00</span>
+                  </div>
+                </div>
+                
+                <div className="space-y-1 px-2">
+                  <Link 
+                    href="/rules" 
+                    className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Rules
+                  </Link>
+                  <Link 
+                    href="/accounts" 
+                    className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Account Statement
+                  </Link>
+                  <Link 
+                    href="/betHistory" 
+                    className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Bet History
+                  </Link>
+                  <Link 
+                    href="/changePassword" 
+                    className="block px-3 py-2 rounded-md text-base font-medium text-red-200 hover:bg-white/10 transition-colors"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    Change Password
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-blue-200 hover:bg-white/10 transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+                
+                <div className="px-4 py-3 mt-4">
+                  <p className="text-white font-medium">{user?.fullName}</p>
+                  <p className="text-xs text-blue-200">{user?.phone}</p>
+                </div>
+              </>
+            )}
             
-            <div className="space-y-1 px-2">
-              <Link 
-                href="/rules" 
-                className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Rules
-              </Link>
-              <Link 
-                href="/accounts" 
-                className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Account Statement
-              </Link>
-              <Link 
-                href="/betHistory" 
-                className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Bet History
-              </Link>
-              <Link 
-                href="/changePassword" 
-                className="block px-3 py-2 rounded-md text-base font-medium text-red-200 hover:bg-white/10 transition-colors"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                Change Password
-              </Link>
-              <button
-                onClick={handleLogout}
-                className="w-full text-left px-3 py-2 rounded-md text-base font-medium text-blue-200 hover:bg-white/10 transition-colors"
-              >
-                Sign Out
-              </button>
-            </div>
-            
-            <div className="px-4 py-3 mt-4">
-              <p className="text-white font-medium">{user?.fullName ?? "Guest"}</p>
-              <p className="text-xs text-blue-200">{user?.phone ?? ""}</p>
-            </div>
+            {!isAuthenticated && (
+              <div className="space-y-2 px-2">
+                <Link 
+                  href="/login" 
+                  className="block w-full text-center px-4 py-2 rounded-md bg-white/10 text-white font-medium hover:bg-white/20 transition-colors"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Login
+                </Link>
+                <Link 
+                  href="/register" 
+                  className="block w-full text-center px-4 py-2 rounded-md bg-white/20 text-white font-medium hover:bg-white/30 transition-colors"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  Register
+                </Link>
+              </div>
+            )}
           </div>
         )}
       </div>
