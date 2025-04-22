@@ -173,7 +173,7 @@ export default function LandingPage() {
             
             <div className="flex justify-between items-center mt-4">
               <span className="text-sm text-white/70">Select a team to view odds</span>
-              <Link href={`/teams/${iplTeams[activeTeam].name.toLowerCase().replace(/ /g, '-')}`}>
+              <Link href="/cricket">
                 <Button size="sm" variant="ghost" className="text-white hover:bg-white/10">
                   View Details <ArrowRight className="ml-1 w-4 h-4" />
                 </Button>

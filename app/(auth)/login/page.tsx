@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Eye, EyeOff, Smartphone, Lock, Trophy } from 'lucide-react';
+import { useAuthStore } from '@/stores/authStore';
 
 const LoginPage = () => {
   const router = useRouter();
@@ -17,6 +18,9 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
+  
+  // Get the login function from the auth store
+  const login = useAuthStore((state) => state.login);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -50,18 +54,16 @@ const LoginPage = () => {
         throw new Error('Authentication token not received');
       }
 
-      // Store token in localStorage
-      localStorage.setItem('authToken', data.token);
-
-      // Store user data (excluding sensitive info) in session storage
-      if (data.user) {
-        sessionStorage.setItem('user', JSON.stringify({
-          id: data.user.id,
-          name: data.user.name,
-          phone: data.user.phone,
-          role: data.user.role
-        }));
-      }
+      // Use the auth store to handle login
+      login({
+        token: data.token,
+        user: {
+          _id: data._id,
+          fullName: data.fullName,
+          phone: data.phone,
+          money: data.money
+        }
+      });
 
       toast.success('Login successful! Redirecting...');
       router.push('/');
@@ -89,8 +91,6 @@ const LoginPage = () => {
           
           <h2 className="text-4xl font-bold mb-6">Cricket Betting Made Easy</h2>
           <p className="text-xl mb-8">Place your bets on IPL matches and win big rewards. The most trusted cricket betting platform in India.</p>
-          
-       
           
           <div className="flex items-center mt-8 space-x-4">
             <div className="flex flex-col items-center">
