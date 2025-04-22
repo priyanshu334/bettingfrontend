@@ -14,8 +14,7 @@ interface Player {
 interface BowlerRunsCardProps {
   heading: string;
   players: Player[];
-  matchId: number;
-  // Remove userId from props as we'll get it from the auth store
+  matchId: number | string; // Allow string or number for matchId
 }
 
 interface BetResponse {
@@ -25,7 +24,6 @@ interface BetResponse {
   bet?: any;
 }
 
-// Remove userId from props since we'll get it from auth store
 const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({ 
   heading, 
   players, 
@@ -72,9 +70,22 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
     const userId = user._id; // Get the actual MongoDB ObjectId from the user object
     
-    if (!selectedPlayer || !matchId) {
-      logDebugInfo("Missing required data", { selectedPlayer, matchId });
-      toast.error("Missing required bet information");
+    if (!selectedPlayer) {
+      logDebugInfo("Missing selected player", { selectedPlayer });
+      toast.error("No bowler selected");
+      return;
+    }
+
+    if (!matchId) {
+      logDebugInfo("Missing match ID", { matchId });
+      toast.error("Match ID is missing");
+      return;
+    }
+
+    // Check if teamName exists
+    if (!selectedPlayer.teamName) {
+      logDebugInfo("Team name is missing", { selectedPlayer });
+      toast.error("Bowler's team name is missing, which is required");
       return;
     }
     
@@ -85,9 +96,13 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
     }
 
     setIsProcessing(true);
+    
+    // Make sure matchId is treated as a string to prevent JSON parsing issues
+    const stringMatchId = String(matchId);
+    
     logDebugInfo("Starting bet placement", { 
-      userId, // This should now be the actual MongoDB ObjectId
-      matchId, 
+      userId,
+      matchId: stringMatchId,
       bowlerName: selectedPlayer.name,
       teamName: selectedPlayer.teamName,
       predictedRunsConceded: selectedPlayer.runsConceded,
@@ -99,9 +114,9 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
     try {
       const requestBody = {
-        userId, // Now using the actual user ID from auth store
-        matchId,
-        teamName: selectedPlayer.teamName,
+        userId,
+        matchId: stringMatchId, // Send as string to prevent number parsing issues
+        teamName: selectedPlayer.teamName, // Ensure this is not undefined
         bowlerName: selectedPlayer.name,
         predictedRunsConceded: selectedPlayer.runsConceded,
         betAmount: amount
@@ -124,7 +139,23 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
       logDebugInfo("Response data", responseData);
 
       if (!response.ok) {
+        // Extract validation error message from the error string if available
         let errorMessage = responseData.error || responseData.message || "Failed to place bet";
+        
+        // If it's a validation error, try to make it more user-friendly
+        if (errorMessage.includes("validation failed")) {
+          if (errorMessage.includes("teamName: Path `teamName` is required")) {
+            errorMessage = "Team name is required for this bet.";
+          } else if (errorMessage.includes("matchId: Cast to")) {
+            errorMessage = "Invalid match ID format.";
+          } else {
+            // Extract just the validation error part
+            const validationMatch = errorMessage.match(/validation failed: (.+?)(?:'|}|$)/);
+            if (validationMatch && validationMatch[1]) {
+                errorMessage = `Validation error: ${validationMatch[1]}`;
+            }
+          }
+        }
         
         if (response.status === 400 && responseData.message === "Insufficient balance") {
           errorMessage = "Insufficient balance to place this bet";
@@ -134,8 +165,6 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
           errorMessage = "You don't have permission to place this bet.";
         } else if (response.status === 404) {
           errorMessage = "Bet endpoint not found. Please check API URL.";
-        } else if (response.status === 500) {
-          errorMessage = "Server error. Please try again later.";
         }
         
         logDebugInfo("Error placing bet", { status: response.status, error: errorMessage });
@@ -172,6 +201,11 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
     }
   };
 
+  // Function to check if a player has required fields
+  const playerHasRequiredFields = (player: Player): boolean => {
+    return !!player.name && !!player.teamName;
+  };
+
   return (
     <>
       <div className="bg-white shadow-md rounded-lg w-full overflow-hidden border border-gray-200">
@@ -181,8 +215,9 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         </div>
 
         {/* Table Header */}
-        <div className="grid grid-cols-4 text-center text-sm font-semibold border-b border-gray-300">
+        <div className="grid grid-cols-5 text-center text-sm font-semibold border-b border-gray-300">
           <div className="text-left px-4 py-2 col-span-2 bg-gray-50">Bowler</div>
+          <div className="bg-gray-50 py-2">Team</div>
           <div className="bg-red-500 text-white py-2">Runs</div>
           <div className="bg-blue-500 text-white py-2">Bet</div>
         </div>
@@ -191,11 +226,16 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         {players.map((player, index) => (
           <div
             key={index}
-            className="grid grid-cols-4 items-center text-center border-b border-gray-100"
+            className="grid grid-cols-5 items-center text-center border-b border-gray-100"
           >
             {/* Name */}
             <div className="text-left px-4 py-3 text-sm font-medium text-gray-700 col-span-2 bg-white capitalize">
               {player.name}
+            </div>
+            
+            {/* Team */}
+            <div className="py-3 bg-gray-50 text-gray-700">
+              {player.teamName || <span className="text-red-500 text-xs">Missing</span>}
             </div>
 
             {/* Runs */}
@@ -207,8 +247,13 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             <div className="py-3 bg-blue-50">
               <button
                 onClick={() => handleBetClick(player)}
-                className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-4 py-1 rounded-full font-medium transition"
-                disabled={isProcessing || !isAuthenticated}
+                className={`${
+                  playerHasRequiredFields(player) 
+                    ? "bg-blue-100 hover:bg-blue-200 text-blue-700" 
+                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                } text-sm px-4 py-1 rounded-full font-medium transition`}
+                disabled={isProcessing || !isAuthenticated || !playerHasRequiredFields(player)}
+                title={!playerHasRequiredFields(player) ? "Missing required player information" : ""}
               >
                 100
               </button>
@@ -229,21 +274,31 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               ×
             </button>
             <h2 className="text-lg font-semibold mb-4 text-center text-red-900">Place Bowler Runs Bet</h2>
-            <div className="text-sm text-gray-700 mb-2">
-              Bowler: <span className="font-medium">{selectedPlayer.name}</span>
-            </div>
-            <div className="text-sm text-gray-700 mb-2">
-              Team: <span className="font-medium">{selectedPlayer.teamName || 'N/A'}</span>
-            </div>
-            <div className="text-sm text-gray-700 mb-2">
-              Predicted Runs: <span className="font-medium">{selectedPlayer.runsConceded}</span>
+            
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              <div className="text-sm text-gray-700">
+                <span className="font-medium text-gray-500">Bowler:</span><br/>
+                <span className="font-medium">{selectedPlayer.name}</span>
+              </div>
+              <div className="text-sm text-gray-700">
+                <span className="font-medium text-gray-500">Team:</span><br/>
+                <span className="font-medium">{selectedPlayer.teamName || <span className="text-red-500">Missing (Required)</span>}</span>
+              </div>
+              <div className="text-sm text-gray-700">
+                <span className="font-medium text-gray-500">Predicted Runs:</span><br/>
+                <span className="font-medium">{selectedPlayer.runsConceded}</span>
+              </div>
+              <div className="text-sm text-gray-700">
+                <span className="font-medium text-gray-500">Match ID:</span><br/>
+                <span className="font-medium">{matchId || <span className="text-red-500">Missing</span>}</span>
+              </div>
             </div>
             
             {/* Debug info about authentication state */}
-            <div className="text-xs text-gray-600 mb-4">
-              Auth Status: {isAuthenticated ? 'Logged In' : 'Not Logged In'}
+            <div className="text-xs text-gray-600 mb-4 p-2 bg-gray-50 rounded">
+              <div>Auth Status: {isAuthenticated ? 'Logged In' : 'Not Logged In'}</div>
               {user && user._id && (
-                <span> (User ID: {user._id.substring(0, 8)}...)</span>
+                <div>User ID: {user._id.substring(0, 8)}...</div>
               )}
             </div>
 
@@ -275,7 +330,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               <button
                 onClick={handlePlaceBet}
                 className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
-                disabled={isProcessing || !isAuthenticated}
+                disabled={isProcessing || !isAuthenticated || !selectedPlayer.teamName}
               >
                 {isProcessing ? 'Processing...' : 'Place Bet'}
               </button>
@@ -287,6 +342,16 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
                 Cancel
               </button>
             </div>
+
+            {/* Missing Requirements Warning */}
+            {(!selectedPlayer.teamName) && (
+              <div className="mb-4 p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
+                <strong>Warning:</strong> Cannot place bet because some required information is missing:
+                <ul className="list-disc pl-5 mt-1">
+                  {!selectedPlayer.teamName && <li>Team name is required</li>}
+                </ul>
+              </div>
+            )}
 
             {/* Debug Information Section */}
             {debugInfo && (
