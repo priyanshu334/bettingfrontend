@@ -15,7 +15,7 @@ interface BowlerRunsCardProps {
   heading: string;
   players: Player[];
   matchId: number;
-  userId: string;
+  // Remove userId from props as we'll get it from the auth store
 }
 
 interface BetResponse {
@@ -25,11 +25,11 @@ interface BetResponse {
   bet?: any;
 }
 
+// Remove userId from props since we'll get it from auth store
 const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({ 
   heading, 
   players, 
-  matchId,
-  userId 
+  matchId
 }) => {
   const { token, user, isAuthenticated } = useAuthStore();
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
@@ -39,7 +39,6 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
   const handleBetClick = (player: Player) => {
     setSelectedPlayer(player);
-    // Reset debug info when selecting a new player
     setDebugInfo(null);
   };
 
@@ -64,8 +63,17 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   };
 
   const handlePlaceBet = async () => {
-    if (!selectedPlayer || !userId || !matchId) {
-      logDebugInfo("Missing required data", { selectedPlayer, userId, matchId });
+    // Get userId from the auth store
+    if (!user || !user._id) {
+      logDebugInfo("User ID missing from auth store", { user });
+      toast.error("User information not available. Please login again.");
+      return;
+    }
+
+    const userId = user._id; // Get the actual MongoDB ObjectId from the user object
+    
+    if (!selectedPlayer || !matchId) {
+      logDebugInfo("Missing required data", { selectedPlayer, matchId });
       toast.error("Missing required bet information");
       return;
     }
@@ -78,7 +86,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
     setIsProcessing(true);
     logDebugInfo("Starting bet placement", { 
-      userId, 
+      userId, // This should now be the actual MongoDB ObjectId
       matchId, 
       bowlerName: selectedPlayer.name,
       teamName: selectedPlayer.teamName,
@@ -91,7 +99,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
     try {
       const requestBody = {
-        userId,
+        userId, // Now using the actual user ID from auth store
         matchId,
         teamName: selectedPlayer.teamName,
         bowlerName: selectedPlayer.name,
@@ -234,8 +242,8 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             {/* Debug info about authentication state */}
             <div className="text-xs text-gray-600 mb-4">
               Auth Status: {isAuthenticated ? 'Logged In' : 'Not Logged In'}
-              {isAuthenticated && token && (
-                <span> (Token: {token.substring(0, 10)}...)</span>
+              {user && user._id && (
+                <span> (User ID: {user._id.substring(0, 8)}...)</span>
               )}
             </div>
 
