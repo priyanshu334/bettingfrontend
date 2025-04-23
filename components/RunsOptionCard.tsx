@@ -271,7 +271,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
       setDebugInfo(requestDebugInfo);
 
       const response: AxiosResponse<ApiResponse> = await axios.post<ApiResponse>(
-        "/api/RunsAndWickets/place", 
+        `${process.env.NEXT_PUBLIC_API_URL}/api/RunsAndWickets/place`, 
         payload, 
         {
           headers: {

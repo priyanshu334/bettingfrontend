@@ -59,7 +59,7 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
 
     try {
       toast.promise(
-        fetch("/api/playerwicket/place", {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerwicket/place`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
