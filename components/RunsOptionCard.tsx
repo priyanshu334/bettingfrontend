@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import axios from "axios";
+import React, { useState, useEffect } from "react";
+import axios, { AxiosError, AxiosResponse } from "axios";
 import { useAuthStore } from "@/stores/authStore"; // Import the auth store
 
 export type MarketType = "runs" | "wickets" | "fours" | "sixes" | "match" | "tied" | string;
@@ -25,6 +25,68 @@ interface RunsOptionsCardProps {
   isLoading?: boolean;
 }
 
+interface User {
+  _id: string;
+  money: number;
+  // Add other user properties as needed
+}
+
+interface AuthStore {
+  user: User | null;
+  token: string | null;
+  isAuthenticated: boolean;
+  updateUserBalance: (newBalance: number) => void;
+}
+
+interface BetPayload {
+  userId: string;
+  matchId: number;
+  teamId: number;
+  marketType: MarketType;
+  betCondition: string;
+  overs?: string;
+  statType?: StatType;
+  odds: number;
+  amount: number;
+}
+
+interface ApiResponse {
+  message: string;
+  error?: string;
+  betId?: string;
+  // Add other response properties as needed
+}
+
+type DebugInfoType = 
+  | { type: "validation_error"; message: string; validationTest?: ValidationTest }
+  | { 
+      endpoint: string; 
+      method: string; 
+      headers: Record<string, string>; 
+      payload: BetPayload; 
+      status: "pending" | "success"; 
+      response?: ApiResponse;
+      validationTest?: ValidationTest;
+    }
+  | { 
+      type: "api_error"; 
+      error: {
+        message: string;
+        response: {
+          status: number;
+          statusText: string;
+          data: any;
+        } | null;
+        request: any;
+      };
+      validationTest?: ValidationTest;
+    };
+
+interface ValidationTest {
+  passed: boolean;
+  message: string;
+}
+
 const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({ 
   heading, 
   options, 
@@ -33,36 +95,58 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
   isLoading: propsLoading = false
 }) => {
   // Get auth data from store
-  const { user, token, isAuthenticated } = useAuthStore();
+  const { user, token, isAuthenticated, updateUserBalance } = useAuthStore() as AuthStore;
   
   const [selectedOption, setSelectedOption] = useState<Option | null>(null);
   const [selectedChoice, setSelectedChoice] = useState<BetChoice | "">("");
   const [selectedOdds, setSelectedOdds] = useState<number | null>(null);
   const [amount, setAmount] = useState<number>(100);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [potentialWinnings, setPotentialWinnings] = useState<number>(0);
+  const [debugInfo, setDebugInfo] = useState<DebugInfoType | null>(null);
+  const [showDebugModal, setShowDebugModal] = useState<boolean>(false);
 
-  const handleOddsClick = (option: Option, choice: BetChoice, odds: number) => {
+  // Add useEffect to log props and state for debugging
+  useEffect(() => {
+    console.log("RunsOptionsCard Props:", { heading, options, matchId, teamId });
+    console.log("Auth State:", { 
+      isAuthenticated, 
+      user: user ? { 
+        _id: user._id, 
+        money: user.money, 
+        // Hide sensitive info in logs
+        token: token ? "[REDACTED]" : null 
+      } : null 
+    });
+  }, [heading, options, matchId, teamId, isAuthenticated, user, token]);
+
+  const handleOddsClick = (option: Option, choice: BetChoice, odds: number): void => {
+    console.log("Odds clicked:", { option, choice, odds });
     setSelectedOption(option);
     setSelectedChoice(choice);
     setSelectedOdds(odds);
     setError(null);
     // Calculate potential winnings
-    setPotentialWinnings(amount * odds);
+    const calculatedWinnings: number = amount * odds;
+    console.log("Calculated winnings:", calculatedWinnings);
+    setPotentialWinnings(calculatedWinnings);
   };
 
-  const closeModal = () => {
+  const closeModal = (): void => {
     setSelectedOption(null);
     setSelectedChoice("");
     setSelectedOdds(null);
     setAmount(100);
     setError(null);
     setPotentialWinnings(0);
+    setDebugInfo(null);
+    setShowDebugModal(false);
   };
 
-  const handleAmountQuickSelect = (value: number) => {
-    const newAmount = Math.min(amount + value, 200000);
+  const handleAmountQuickSelect = (value: number): void => {
+    const newAmount: number = Math.min(amount + value, 200000);
+    console.log("Quick select amount:", newAmount);
     setAmount(newAmount);
     // Update potential winnings when amount changes
     if (selectedOdds) {
@@ -70,8 +154,9 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
     }
   };
 
-  const handleAmountChange = (value: number) => {
-    const validAmount = Math.max(100, Math.min(200000, value || 100));
+  const handleAmountChange = (value: number): void => {
+    const validAmount: number = Math.max(100, Math.min(200000, value || 100));
+    console.log("Amount changed to:", validAmount);
     setAmount(validAmount);
     // Update potential winnings when amount changes
     if (selectedOdds) {
@@ -79,66 +164,178 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
     }
   };
 
-  const handlePlaceBet = async () => {
-    // Check if user is authenticated
+  const validateBet = (): string | null => {
+    // Validate all required fields are present
     if (!isAuthenticated || !user || !token) {
-      setError("Please login to place bets");
-      return;
+      return "Authentication required. Please login to place bets.";
     }
 
-    if (!selectedOption || !selectedOdds || !matchId || !teamId) {
-      setError("Missing required information");
-      return;
+    if (!selectedOption) {
+      return "No option selected.";
+    }
+
+    if (!selectedChoice) {
+      return "No choice (Yes/No) selected.";
+    }
+
+    if (!selectedOdds) {
+      return "No odds selected.";
+    }
+
+    if (!matchId) {
+      return "Match ID is missing.";
+    }
+
+    if (!teamId) {
+      return "Team ID is missing.";
     }
 
     if (amount < 100 || amount > 200000) {
-      setError("Amount must be between ₹100 and ₹200,000");
-      return;
+      return `Amount must be between ₹100 and ₹200,000. Current amount: ₹${amount}`;
     }
 
     // Check user balance
     if (user.money < amount) {
-      setError("Insufficient balance");
+      return `Insufficient balance. You have ₹${user.money}, but trying to bet ₹${amount}`;
+    }
+
+    return null; // No error
+  };
+
+  const toggleDebugModal = (): void => {
+    setShowDebugModal(prev => !prev);
+  };
+
+  const handlePlaceBet = async (): Promise<void> => {
+    // First run validation
+    const validationError: string | null = validateBet();
+    if (validationError) {
+      console.error("Validation Error:", validationError);
+      setError(validationError);
+      setDebugInfo({ type: "validation_error", message: validationError });
       return;
     }
 
     setIsLoading(true);
     setError(null);
+    console.log("Attempting to place bet...");
 
     try {
+      // Type safety: Ensure all required values are present (should be covered by validation)
+      if (!user || !selectedOption || !selectedOdds) {
+        throw new Error("Missing required data for bet placement");
+      }
+
       // Determine bet condition based on choice
-      const betCondition = selectedChoice === "Yes" ? "true" : "false";
+      const betCondition: string = selectedChoice === "Yes" ? "true" : "false";
       
-      const response = await axios.post("/api/RunsAndWickets/place", {
+      // Create request payload with proper types
+      const payload: BetPayload = {
         userId: user._id,
         matchId,
         teamId,
         marketType: selectedOption.marketType,
         betCondition,
-        overs: selectedOption.overs,
-        statType: selectedOption.statType,
         odds: selectedOdds,
         amount
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`
+      };
+
+      // Add optional fields if they exist
+      if (selectedOption.overs) {
+        payload.overs = selectedOption.overs;
+      }
+
+      if (selectedOption.statType) {
+        payload.statType = selectedOption.statType;
+      }
+
+      // Log request details before sending
+      console.log("Bet request payload:", payload);
+      console.log("Authentication token present:", !!token);
+
+      // Debug info to display in UI
+      const requestDebugInfo: Omit<DebugInfoType, 'type'> & { 
+        endpoint: string; 
+        method: string; 
+        headers: Record<string, string>; 
+        payload: BetPayload; 
+        status: "pending" | "success";
+      } = {
+        endpoint: "/api/RunsAndWickets/place",
+        method: "POST",
+        headers: { Authorization: `Bearer ${token ? "valid_token" : "missing_token"}` },
+        payload,
+        status: "pending"
+      };
+
+      setDebugInfo(requestDebugInfo);
+
+      const response: AxiosResponse<ApiResponse> = await axios.post<ApiResponse>(
+        "/api/RunsAndWickets/place", 
+        payload, 
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         }
+      );
+
+      console.log("API Response:", response.data);
+      
+      setDebugInfo({
+        ...requestDebugInfo,
+        status: "success",
+        response: response.data
       });
 
       if (response.data.message === "Bet placed successfully") {
         // Update user balance in store
-        useAuthStore.getState().updateUserBalance(user.money - amount);
-        closeModal();
-        // Add toast notification here if you have a toast system
+        const newBalance: number = user.money - amount;
+        console.log("Updating user balance:", { oldBalance: user.money, newBalance });
+        
+        // Update the balance in the store
+        updateUserBalance(newBalance);
+        
+        // Add success message
+        setError(null);
+        
+        // Close modal after short delay to show success
+        setTimeout(() => {
+          closeModal();
+        }, 1500);
       } else {
+        console.error("API returned error:", response.data);
         setError(response.data.message || "Failed to place bet");
       }
-    } catch (err: any) {
-      console.error("Error placing bet:", err);
+    } catch (err: unknown) {
+      // Proper type narrowing for Axios errors
+      const axiosError = err as AxiosError<ApiResponse>;
+      console.error("Error placing bet:", axiosError);
+      
+      // Enhanced error logging with proper TypeScript
+      const errorDetails = {
+        message: axiosError.message,
+        response: axiosError.response ? {
+          status: axiosError.response.status,
+          statusText: axiosError.response.statusText,
+          data: axiosError.response.data
+        } : null,
+        request: axiosError.request ? "Request was made but no response received" : null
+      };
+      
+      console.error("Detailed error:", errorDetails);
+      
+      setDebugInfo({
+        type: "api_error",
+        error: errorDetails
+      });
+      
+      // Extract error message from response if possible
       setError(
-        err.response?.data?.error || 
-        err.response?.data?.message || 
-        err.message || 
+        axiosError.response?.data?.error || 
+        axiosError.response?.data?.message || 
+        axiosError.message || 
         "Failed to place bet"
       );
     } finally {
@@ -146,12 +343,43 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
     }
   };
 
+  // Helper function to run validation check and update debug info
+  const runValidationCheck = (): void => {
+    const validationResult = validateBet();
+    const validationTest: ValidationTest = validationResult 
+      ? { passed: false, message: validationResult }
+      : { passed: true, message: "All validation checks passed" };
+
+    // Update debug info with validation test result
+    if (debugInfo) {
+      setDebugInfo({
+        ...debugInfo,
+        validationTest
+      });
+    } else {
+      setDebugInfo({
+        type: "validation_error",
+        message: "Manual validation check",
+        validationTest
+      });
+    }
+  };
+
   return (
     <>
       <div className="bg-white shadow-md rounded-lg w-full overflow-hidden border border-gray-200">
         {/* Heading Bar */}
-        <div className="bg-orange-200 px-4 py-3 text-left font-semibold text-gray-800 border-b border-gray-300">
-          {heading}
+        <div className="bg-orange-200 px-4 py-3 text-left font-semibold text-gray-800 border-b border-gray-300 flex justify-between items-center">
+          <span>{heading}</span>
+          {/* Debug button only visible in development */}
+          {process.env.NODE_ENV === 'development' && (
+            <button 
+              onClick={toggleDebugModal}
+              className="text-xs bg-gray-700 text-white px-2 py-1 rounded hover:bg-gray-800"
+            >
+              Debug
+            </button>
+          )}
         </div>
 
         {/* Table Header */}
@@ -214,7 +442,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
         )}
       </div>
 
-      {/* Improved Bet Placement Modal */}
+      {/* Bet Placement Modal */}
       {selectedOption && selectedOdds !== null && (
         <div className="fixed inset-0 z-50 text-black bg-black bg-opacity-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
@@ -300,6 +528,13 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
                 </div>
               )}
 
+              {/* Success Message */}
+              {debugInfo && 'status' in debugInfo && debugInfo.status === "success" && !error && (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
+                  Bet placed successfully!
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex justify-between gap-3">
                 <button
@@ -332,6 +567,156 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
                   Cancel
                 </button>
               </div>
+
+              {/* Debug Toggle (Only in development) */}
+              {process.env.NODE_ENV === 'development' && debugInfo && (
+                <div className="mt-4 text-xs">
+                  <button 
+                    onClick={toggleDebugModal}
+                    className="text-blue-600 underline"
+                  >
+                    {showDebugModal ? "Hide Debug Info" : "Show Debug Info"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Debug Modal */}
+      {showDebugModal && debugInfo && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-75 flex items-center justify-center overflow-y-auto p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl h-3/4 overflow-hidden flex flex-col">
+            <div className="bg-gray-800 px-6 py-3 text-white flex justify-between items-center">
+              <h3 className="font-bold">Debug Information</h3>
+              <button 
+                onClick={toggleDebugModal}
+                className="text-white hover:text-gray-300"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-auto p-4">
+              <div className="space-y-4">
+                {/* Auth Status */}
+                <div className="border rounded p-3">
+                  <h4 className="font-bold text-sm mb-2">Authentication Status</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>Is Authenticated:</div>
+                    <div className={isAuthenticated ? "text-green-600" : "text-red-600"}>
+                      {isAuthenticated ? "Yes" : "No"}
+                    </div>
+                    
+                    <div>User ID:</div>
+                    <div>{user?._id || "Not available"}</div>
+                    
+                    <div>Token:</div>
+                    <div>{token ? "Present" : "Missing"}</div>
+                    
+                    <div>Balance:</div>
+                    <div>₹{user?.money?.toLocaleString() || "0"}</div>
+                  </div>
+                </div>
+                
+                {/* Bet Details */}
+                <div className="border rounded p-3">
+                  <h4 className="font-bold text-sm mb-2">Bet Details</h4>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>Match ID:</div>
+                    <div>{matchId || "Missing"}</div>
+                    
+                    <div>Team ID:</div>
+                    <div>{teamId || "Missing"}</div>
+                    
+                    <div>Market Type:</div>
+                    <div>{selectedOption?.marketType || "Not selected"}</div>
+                    
+                    <div>Stat Type:</div>
+                    <div>{selectedOption?.statType || "N/A"}</div>
+                    
+                    <div>Overs:</div>
+                    <div>{selectedOption?.overs || "N/A"}</div>
+                    
+                    <div>Choice:</div>
+                    <div>{selectedChoice || "Not selected"}</div>
+                    
+                    <div>Odds:</div>
+                    <div>{selectedOdds || "Not selected"}</div>
+                    
+                    <div>Amount:</div>
+                    <div>₹{amount}</div>
+                  </div>
+                </div>
+                
+                {/* API Request */}
+                {'type' in debugInfo ? 
+                  debugInfo.type !== "validation_error" && (
+                    <div className="border rounded p-3">
+                      <h4 className="font-bold text-sm mb-2">API Request</h4>
+                      <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto max-h-40">
+                        {JSON.stringify(debugInfo, null, 2)}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div className="border rounded p-3">
+                      <h4 className="font-bold text-sm mb-2">API Request</h4>
+                      <pre className="bg-gray-100 p-2 rounded text-xs overflow-auto max-h-40">
+                        {JSON.stringify(debugInfo, null, 2)}
+                      </pre>
+                    </div>
+                  )
+                }
+                
+                {/* Error Details */}
+                {'type' in debugInfo && debugInfo.type === "api_error" && debugInfo.error && (
+                  <div className="border border-red-300 rounded p-3 bg-red-50">
+                    <h4 className="font-bold text-sm mb-2 text-red-700">Error Details</h4>
+                    <pre className="bg-red-100 p-2 rounded text-xs overflow-auto max-h-40 text-red-800">
+                      {JSON.stringify(debugInfo.error, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                
+                {/* Validation Errors */}
+                {'type' in debugInfo && debugInfo.type === "validation_error" && (
+                  <div className="border border-yellow-300 rounded p-3 bg-yellow-50">
+                    <h4 className="font-bold text-sm mb-2 text-yellow-800">Validation Error</h4>
+                    <div className="text-yellow-800">
+                      {debugInfo.message}
+                    </div>
+                  </div>
+                )}
+
+                {/* Run Validation Test */}
+                <div className="border rounded p-3">
+                  <h4 className="font-bold text-sm mb-2">Validation Test</h4>
+                  <button
+                    onClick={runValidationCheck}
+                    className="bg-blue-500 text-white text-xs py-1 px-3 rounded"
+                  >
+                    Run Validation Check
+                  </button>
+                  
+                  {debugInfo.validationTest && (
+                    <div className={`mt-2 p-2 rounded text-xs ${
+                      debugInfo.validationTest.passed ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                    }`}>
+                      {debugInfo.validationTest.message}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gray-100 px-4 py-3 flex justify-end">
+              <button
+                onClick={toggleDebugModal}
+                className="bg-gray-800 text-white px-4 py-2 rounded text-sm"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
