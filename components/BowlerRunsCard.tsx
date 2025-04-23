@@ -55,7 +55,7 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
 
     try {
       toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bowlerruns/place`, {
+        fetch(`https://backend.nurdcells.com/api/bowlerruns/place`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
