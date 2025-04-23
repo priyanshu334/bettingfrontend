@@ -98,7 +98,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
       };
       
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/bets/place`, 
+        `${process.env.NEXT_PUBLIC_API_URL}/api/RunsAndWickets/place`, 
         {
           userId: user._id,
           matchId,
