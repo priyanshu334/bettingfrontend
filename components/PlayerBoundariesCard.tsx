@@ -58,7 +58,7 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
 
     try {
       toast.promise(
-        fetch("/api/boundarybet/place", {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/boundarybet/place`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

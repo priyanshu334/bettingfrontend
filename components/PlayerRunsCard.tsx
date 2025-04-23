@@ -48,7 +48,7 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, playe
 
     try {
       toast.promise(
-        fetch("/api/playerruns/place", {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerruns/place`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
