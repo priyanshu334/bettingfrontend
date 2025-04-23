@@ -446,13 +446,14 @@ export default function MatchDetails() {
       <div className="mb-8">
         <h2 className="text-xl md:text-2xl font-semibold text-white mb-4">Match Runs & Wickets</h2>
         <RunsOptionsCard
-          key="some-key"
-          matchId={match.id}
-          userId="some-user-id"
-          heading="Runs & Wickets"
-          options={runsAndWicketsData.options}
-          teamId={match.localTeam.id} // or match.visitorTeam.id
-        />
+  key="some-key"
+  matchId={match.id}
+
+  heading="Runs & Wickets"
+  options={runsAndWicketsData.options}
+  teamId={match.localTeam.id} // or match.visitorTeam.id
+/>
+
       </div>
 
       <div className="mb-8">
@@ -461,14 +462,14 @@ export default function MatchDetails() {
           <PlayerRunsCard
             key={`local-runs-${oddsUpdateCount}`}
             matchId={match.id}
-            userId="current-user-id"
+   
             heading={`${match.localTeam.name}`}
             players={playerRunsData}
           />
           <PlayerRunsCard
             key={`visitor-runs-${oddsUpdateCount}`}
             matchId={match.id}
-            userId="current-user-id"
+  
             heading={`${match.visitorTeam.name}`}
             players={visitorPlayerRunsData}
           />
@@ -481,14 +482,14 @@ export default function MatchDetails() {
           <PlayerWicketsCard
             key={`local-wickets-${oddsUpdateCount}`}
             matchId={match.id}
-            userId="current-user-id"
+      
             heading={`${match.localTeam.name}`}
             players={playerWicketsData}
           />
           <PlayerWicketsCard
             key={`visitor-wickets-${oddsUpdateCount}`}
             matchId={match.id}
-            userId="current-user-id"
+        
             heading={`${match.visitorTeam.name}`}
             players={visitorPlayerWicketsData}
           />
@@ -501,14 +502,14 @@ export default function MatchDetails() {
           <PlayerBoundariesCard
             key={`local-boundaries-${oddsUpdateCount}`}
             matchId={match.id}
-            userId="current-user-id"
+  
             heading={`${match.localTeam.name}`}
             players={playerBoundariesData}
           />
           <PlayerBoundariesCard
             key={`visitor-boundaries-${oddsUpdateCount}`}
             matchId={match.id}
-            userId="current-user-id"
+
             heading={`${match.visitorTeam.name}`}
             players={visitorPlayerBoundariesData}
           />
@@ -521,12 +522,14 @@ export default function MatchDetails() {
           <BowlerRunsCard
             key={`local-bowler-${oddsUpdateCount}`}
             matchId={match.id}
+
             heading={`${match.localTeam.name}`}
             players={bowlerRunsData}
           />
           <BowlerRunsCard
             key={`visitor-bowler-${oddsUpdateCount}`}
             matchId={match.id}
+    
             heading={`${match.visitorTeam.name}`}
             players={visitorBowlerRunsData}
           />

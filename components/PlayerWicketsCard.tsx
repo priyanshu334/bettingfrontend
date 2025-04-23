@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/authStore"; // Adjusted path as needed
 
 interface Player {
   name: string;
@@ -14,7 +15,6 @@ interface PlayerWicketsCardProps {
   heading: string;
   players: Player[];
   matchId: number;
-  userId: string;
 }
 
 interface BetResponse {
@@ -27,14 +27,20 @@ interface BetResponse {
 const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({ 
   heading, 
   players, 
-  matchId,
-  userId 
+  matchId
 }) => {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  
+  // Get authentication data from the auth store
+  const { user, token, updateUserBalance, isAuthenticated } = useAuthStore();
 
   const openBetModal = (player: Player) => {
+    if (!isAuthenticated || !user) {
+      toast.error("Please log in to place bets");
+      return;
+    }
     setSelectedPlayer(player);
   };
 
@@ -44,21 +50,23 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
   };
 
   const handlePlaceBet = async () => {
-    if (!selectedPlayer || !userId || !matchId) return;
+    if (!selectedPlayer || !user || !matchId || !isAuthenticated) {
+      toast.error("Authentication required");
+      return;
+    }
 
     setIsProcessing(true);
 
     try {
       toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerwicket/place`, {
+        fetch("/api/playerwicket/place", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Add authorization header if needed
-            // "Authorization": `Bearer ${token}`
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify({
-            userId,
+            userId: user._id,
             matchId,
             teamName: selectedPlayer.teamName,
             playerName: selectedPlayer.name,
@@ -70,6 +78,12 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
           if (!response.ok) {
             throw new Error(data.error || "Failed to place bet");
           }
+          
+          // Update user balance in the store if bet was successful
+          if (data.newBalance !== undefined) {
+            updateUserBalance(data.newBalance);
+          }
+          
           return data;
         }),
         {
@@ -150,6 +164,10 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
               Predicted Wickets: <span className="font-medium">{selectedPlayer.wickets}</span>
             </div>
 
+            <div className="text-sm text-gray-700 mb-2">
+              Your Balance: <span className="font-medium">₹{user?.money || 0}</span>
+            </div>
+
             <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
             <input
               type="number"
@@ -157,7 +175,7 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
               onChange={(e) => setAmount(Number(e.target.value))}
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
               min={100}
-              max={200000}
+              max={user?.money || 200000}
               disabled={isProcessing}
             />
 
@@ -165,9 +183,9 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
               {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
                 <button
                   key={val}
-                  onClick={() => setAmount(amount + val)}
+                  onClick={() => setAmount(Math.min((user?.money || 0), amount + val))}
                   className="bg-orange-300 text-white py-2 rounded font-semibold text-sm hover:bg-orange-400 disabled:opacity-50"
-                  disabled={isProcessing}
+                  disabled={isProcessing || (amount + val) > (user?.money || 0)}
                 >
                   +{val / 1000}k
                 </button>
@@ -178,7 +196,7 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
               <button
                 onClick={handlePlaceBet}
                 className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
-                disabled={isProcessing}
+                disabled={isProcessing || amount > (user?.money || 0)}
               >
                 {isProcessing ? 'Processing...' : 'Place Bet'}
               </button>

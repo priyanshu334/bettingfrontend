@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/authStore"; // Import auth store
 
 interface Player {
   id: number;
@@ -12,7 +13,6 @@ interface Player {
 
 interface PlayerRunsCardProps {
   matchId: number;
-  userId: string;
   heading: string;
   players: Player[];
 }
@@ -23,7 +23,8 @@ interface BetResponse {
   error?: string;
 }
 
-const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, userId, heading, players }) => {
+const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, players }) => {
+  const { user, token, updateUserBalance } = useAuthStore(); // Get auth data from store
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [selectedBetType, setSelectedBetType] = useState<string>("");
   const [amount, setAmount] = useState<number>(100);
@@ -41,23 +42,24 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, userId, headin
   };
 
   const handlePlaceBet = async () => {
-    if (!selectedPlayer || !selectedBetType) return;
+    if (!selectedPlayer || !selectedBetType || !user) return;
 
     setIsProcessing(true);
 
     try {
       toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerruns/place`, {
+        fetch("/api/playerruns/place", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}` // Add token for authentication
           },
           body: JSON.stringify({
+            userId: user._id,
             matchId,
-            userId,
             playerId: selectedPlayer.id,
             playerName: selectedPlayer.name,
-            betType: selectedBetType,
+            betType: selectedBetType.split(":")[0], // Extract bet type (e.g., "50+")
             amount,
             odds: parseFloat(selectedBetType.split(":")[1]) // Extract odds from betType string
           })
@@ -71,8 +73,12 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, userId, headin
         {
           loading: 'Placing your bet...',
           success: (data) => {
+            // Update user balance in the store
+            if (data.newBalance !== undefined) {
+              updateUserBalance(data.newBalance);
+            }
             closeModal();
-            return `${data.message}. New balance: ₹${data.newBalance}`;
+            return `${data.message}. New balance: ₹${data.newBalance?.toLocaleString()}`;
           },
           error: (error) => error.message || "Bet placement failed",
         }
@@ -127,64 +133,96 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, userId, headin
         ))}
       </div>
 
-      {/* Modal */}
+      {/* Improved Modal UI */}
       {selectedPlayer && (
         <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-pink-100 rounded-lg shadow-xl w-[90%] max-w-md p-6 relative">
-            <button
-              onClick={closeModal}
-              className="absolute top-2 right-2 text-lg font-bold text-gray-700 hover:text-red-600"
-              disabled={isProcessing}
-            >
-              ×
-            </button>
-            <h2 className="text-lg font-semibold mb-4 text-center text-red-900">Place Bet</h2>
-            <div className="text-sm text-gray-700 mb-2">
-              Player: <span className="font-medium">{selectedPlayer.name}</span>
+          <div className="bg-white rounded-lg shadow-xl w-[90%] max-w-md overflow-hidden">
+            {/* Modal Header */}
+            <div className="bg-blue-600 text-white py-3 px-6 font-bold text-lg">
+              Place Bet
             </div>
-            <div className="text-sm text-gray-700 mb-4">
-              Bet: <span className="font-medium">{selectedBetType.split(":")[0]}</span> (Odds: {selectedBetType.split(":")[1]})
-            </div>
+            
+            {/* Modal Content */}
+            <div className="p-6">
+              <div className="bg-blue-50 p-4 rounded-lg mb-4">
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-600">Player:</span>
+                  <span className="font-semibold">{selectedPlayer.name}</span>
+                </div>
+                <div className="flex justify-between mb-2">
+                  <span className="text-gray-600">Current Runs:</span>
+                  <span className="font-semibold">{selectedPlayer.runs}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Bet Type:</span>
+                  <span className="font-semibold">{selectedBetType.split(":")[0]} (Odds: {selectedBetType.split(":")[1]})</span>
+                </div>
+              </div>
 
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-              min={100}
-              max={200000}
-              disabled={isProcessing}
-            />
+              {/* Amount Input with better visibility */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">Bet Amount (₹)</label>
+                <div className="flex items-center">
+                  <span className="bg-gray-100 px-3 py-2 border border-r-0 border-gray-300 rounded-l-md text-gray-500">₹</span>
+                  <input
+                    type="number"
+                    value={amount}
+                    onChange={(e) => setAmount(Number(e.target.value))}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-r-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg font-bold"
+                    min={100}
+                    max={200000}
+                    disabled={isProcessing}
+                  />
+                </div>
+                {user && (
+                  <div className="text-right text-sm mt-1 text-gray-500">
+                    Available Balance: ₹{user.money.toLocaleString()}
+                  </div>
+                )}
+              </div>
 
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
+              {/* Quick Amount Buttons with improved layout */}
+              <div className="mb-4">
+                <label className="block text-sm font-bold text-gray-700 mb-2">Quick Add</label>
+                <div className="grid grid-cols-5 gap-2">
+                  {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
+                    <button
+                      key={val}
+                      onClick={() => setAmount(amount + val)}
+                      className="bg-green-100 text-green-800 py-2 rounded font-medium text-xs hover:bg-green-200 disabled:opacity-50"
+                      disabled={isProcessing}
+                    >
+                      +{val >= 1000 ? `${val/1000}k` : val}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Potential Winnings */}
+              <div className="bg-green-50 p-3 rounded-lg mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Potential Winnings:</span>
+                  <span className="font-bold text-green-700">₹{(amount * parseFloat(selectedBetType.split(":")[1])).toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-between gap-3">
                 <button
-                  key={val}
-                  onClick={() => setAmount(amount + val)}
-                  className="bg-orange-300 text-white py-2 rounded font-semibold text-xs hover:bg-orange-400 disabled:opacity-50"
+                  onClick={closeModal}
+                  className="bg-gray-300 text-gray-800 w-1/3 py-3 rounded-lg hover:bg-gray-400 font-semibold disabled:opacity-50"
                   disabled={isProcessing}
                 >
-                  +{val / 1000}k
+                  Cancel
                 </button>
-              ))}
-            </div>
-
-            <div className="flex justify-between gap-3">
-              <button
-                onClick={handlePlaceBet}
-                className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
-                disabled={isProcessing}
-              >
-                {isProcessing ? 'Processing...' : 'Place Bet'}
-              </button>
-              <button
-                onClick={closeModal}
-                className="bg-red-500 text-white w-full py-2 rounded hover:bg-red-600 font-semibold disabled:opacity-50"
-                disabled={isProcessing}
-              >
-                Cancel
-              </button>
+                <button
+                  onClick={handlePlaceBet}
+                  className="bg-green-600 text-white w-2/3 py-3 rounded-lg hover:bg-green-700 font-semibold disabled:opacity-50"
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? 'Processing...' : 'Place ₹' + amount.toLocaleString() + ' Bet'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

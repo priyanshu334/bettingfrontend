@@ -2,19 +2,19 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
+import { useAuthStore } from "@/stores/authStore"; // Adjust path as needed
 
 interface Player {
   name: string;
   boundaries: number;
-  id?: number; // Added for API integration
-  teamName?: string; // Added for API integration
+  id?: number;
+  teamName?: string;
 }
 
 interface PlayerBoundariesCardProps {
   heading: string;
   players: Player[];
-  matchId: number; // Added for API integration
-  userId: string; // Added for API integration
+  matchId: number;
 }
 
 interface BetResponse {
@@ -27,12 +27,15 @@ interface BetResponse {
 const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({ 
   heading, 
   players, 
-  matchId,
-  userId 
+  matchId
 }) => {
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  
+  // Get user authentication data from store
+  const { user, token, updateUserBalance } = useAuthStore();
+  const userId = user?._id;
 
   const openBetModal = (player: Player) => {
     setSelectedPlayer(player);
@@ -44,18 +47,22 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
   };
 
   const handlePlaceBet = async () => {
-    if (!selectedPlayer || !userId || !matchId) return;
+    if (!selectedPlayer || !userId || !matchId) {
+      toast.error("Missing information", { 
+        description: "User, match or player information is missing" 
+      });
+      return;
+    }
 
     setIsProcessing(true);
 
     try {
       toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/boundarybet/place`, {
+        fetch("/api/boundarybet/place", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Add authorization header if needed
-            // "Authorization": `Bearer ${token}`
+            "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify({
             userId,
@@ -70,13 +77,19 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
           if (!response.ok) {
             throw new Error(data.error || "Failed to place bet");
           }
+          
+          // Update user balance in store if provided in response
+          if (data.newBalance !== undefined) {
+            updateUserBalance(data.newBalance);
+          }
+          
           return data;
         }),
         {
           loading: 'Placing your boundary bet...',
           success: (data) => {
             closeModal();
-            return `${data.message}. New balance: ₹${data.newBalance}`;
+            return `${data.message}. New balance: ₹${data.newBalance?.toLocaleString() || user?.money.toLocaleString()}`;
           },
           error: (error) => error.message || "Boundary bet placement failed",
         }
@@ -128,67 +141,113 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
         ))}
       </div>
 
-      {/* Modal */}
+      {/* Improved Modal */}
       {selectedPlayer && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-pink-100 rounded-lg shadow-xl w-[90%] max-w-md p-6 relative">
-            <button
-              onClick={closeModal}
-              className="absolute top-2 right-2 text-lg font-bold text-gray-700 hover:text-red-600"
-              disabled={isProcessing}
-            >
-              ×
-            </button>
-            <h2 className="text-lg font-semibold mb-4 text-center text-red-900">Place Boundary Bet</h2>
-            <div className="text-sm text-gray-700 mb-2">
-              Player: <span className="font-medium">{selectedPlayer.name}</span>
-            </div>
-            <div className="text-sm text-gray-700 mb-2">
-              Team: <span className="font-medium">{selectedPlayer.teamName || 'N/A'}</span>
-            </div>
-            <div className="text-sm text-gray-700 mb-4">
-              Predicted Boundaries: <span className="font-medium">{selectedPlayer.boundaries}</span>
-            </div>
-
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-              min={100}
-              max={200000}
-              disabled={isProcessing}
-            />
-
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
-                <button
-                  key={val}
-                  onClick={() => setAmount(amount + val)}
-                  className="bg-orange-300 text-white py-2 rounded font-semibold text-sm hover:bg-orange-400 disabled:opacity-50"
-                  disabled={isProcessing}
-                >
-                  +{val / 1000}k
-                </button>
-              ))}
-            </div>
-
-            <div className="flex justify-between gap-3">
-              <button
-                onClick={handlePlaceBet}
-                className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
-                disabled={isProcessing}
-              >
-                {isProcessing ? 'Processing...' : 'Place Bet'}
-              </button>
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-xl w-[90%] max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-blue-600 text-white px-6 py-4 flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Place Boundary Bet</h2>
               <button
                 onClick={closeModal}
-                className="bg-red-500 text-white w-full py-2 rounded hover:bg-red-600 font-semibold disabled:opacity-50"
+                className="text-white text-xl hover:text-red-200"
                 disabled={isProcessing}
               >
-                Cancel
+                ×
               </button>
+            </div>
+            
+            {/* Content */}
+            <div className="p-6">
+              <div className="mb-6 bg-blue-50 p-4 rounded-lg">
+                <div className="grid grid-cols-2 gap-2 text-gray-700 mb-2">
+                  <div className="font-medium">Player:</div>
+                  <div className="font-bold text-blue-700">{selectedPlayer.name}</div>
+                  
+                  <div className="font-medium">Team:</div>
+                  <div className="font-bold text-blue-700">{selectedPlayer.teamName || 'N/A'}</div>
+                  
+                  <div className="font-medium">Predicted Boundaries:</div>
+                  <div className="font-bold text-blue-700">{selectedPlayer.boundaries}</div>
+                </div>
+              </div>
+
+              {/* Current Balance */}
+              <div className="text-sm text-gray-600 mb-4">
+                Current Balance: <span className="font-bold text-green-600">₹{user?.money.toLocaleString() || 0}</span>
+              </div>
+
+              {/* Bet Amount Input */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Bet Amount (₹)</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-2 text-gray-500">₹</span>
+                  <input
+                    type="number"
+                    value={amount}
+                    onChange={(e) => setAmount(Number(e.target.value))}
+                    className="w-full pl-8 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    min={100}
+                    max={200000}
+                    disabled={isProcessing}
+                  />
+                </div>
+              </div>
+
+              {/* Quick Amount Buttons */}
+              <div className="bg-gray-50 p-3 rounded-lg mb-6">
+                <div className="text-sm text-gray-600 mb-2">Quick Add:</div>
+                <div className="grid grid-cols-5 gap-2">
+                  {[100, 500, 1000, 2000, 5000, 10000, 25000, 50000, 75000, 100000].map((val) => (
+                    <button
+                      key={val}
+                      onClick={() => setAmount(amount + val)}
+                      className="bg-blue-100 text-blue-700 py-1 px-2 rounded font-medium text-xs hover:bg-blue-200 disabled:opacity-50"
+                      disabled={isProcessing}
+                    >
+                      {val >= 1000 ? `+${val/1000}k` : `+${val}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bet Summary */}
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                <div className="text-lg font-semibold text-gray-800 mb-1">Bet Summary</div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-700">Your Bet:</span>
+                  <span className="text-xl font-bold text-green-600">₹{amount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center mt-1">
+                  <span className="text-gray-700">Potential Win:</span>
+                  <span className="font-bold text-green-600">₹{(amount * 2).toLocaleString()}</span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-between gap-3">
+                <button
+                  onClick={handlePlaceBet}
+                  className="bg-green-600 text-white w-2/3 py-3 rounded hover:bg-green-700 font-semibold disabled:opacity-50 transition"
+                  disabled={isProcessing || amount <= 0 || (user?.money || 0) < amount}
+                >
+                  {isProcessing ? 'Processing...' : 'Place Bet'}
+                </button>
+                <button
+                  onClick={closeModal}
+                  className="bg-gray-300 text-gray-700 w-1/3 py-3 rounded hover:bg-gray-400 font-semibold disabled:opacity-50 transition"
+                  disabled={isProcessing}
+                >
+                  Cancel
+                </button>
+              </div>
+
+              {/* Error message if user doesn't have enough balance */}
+              {(user?.money || 0) < amount && (
+                <div className="mt-3 text-sm text-red-600">
+                  Insufficient balance. Please enter a lower amount.
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { toast } from "sonner";
-import { useAuthStore } from "@/stores/authStore"; // Adjust the import path as needed
+import { useAuthStore } from "@/stores/authStore"; // Update this path to match your project structure
 
 interface Player {
   name: string;
@@ -14,13 +14,11 @@ interface Player {
 interface BowlerRunsCardProps {
   heading: string;
   players: Player[];
-  matchId: number | string; // Allow string or number for matchId
+  matchId: number;
 }
 
 interface BetResponse {
   message: string;
-  newBalance?: number;
-  error?: string;
   bet?: any;
 }
 
@@ -29,181 +27,80 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   players, 
   matchId
 }) => {
-  const { token, user, isAuthenticated } = useAuthStore();
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [debugInfo, setDebugInfo] = useState<string | null>(null);
+  
+  // Get authentication data from zustand store
+  const { token, user, updateUserBalance } = useAuthStore();
 
   const handleBetClick = (player: Player) => {
     setSelectedPlayer(player);
-    setDebugInfo(null);
   };
 
   const closeModal = () => {
     setSelectedPlayer(null);
     setAmount(100);
-    setDebugInfo(null);
-  };
-
-  const logDebugInfo = (message: string, data?: any) => {
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] ${message}`;
-    
-    console.log(logMessage, data);
-    
-    setDebugInfo(prev => {
-      const newInfo = prev 
-        ? `${prev}\n${logMessage}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`
-        : `${logMessage}${data ? ': ' + JSON.stringify(data, null, 2) : ''}`;
-      return newInfo;
-    });
   };
 
   const handlePlaceBet = async () => {
-    // Get userId from the auth store
-    if (!user || !user._id) {
-      logDebugInfo("User ID missing from auth store", { user });
-      toast.error("User information not available. Please login again.");
-      return;
-    }
-
-    const userId = user._id; // Get the actual MongoDB ObjectId from the user object
-    
-    if (!selectedPlayer) {
-      logDebugInfo("Missing selected player", { selectedPlayer });
-      toast.error("No bowler selected");
-      return;
-    }
-
-    if (!matchId) {
-      logDebugInfo("Missing match ID", { matchId });
-      toast.error("Match ID is missing");
-      return;
-    }
-
-    // Check if teamName exists
-    if (!selectedPlayer.teamName) {
-      logDebugInfo("Team name is missing", { selectedPlayer });
-      toast.error("Bowler's team name is missing, which is required");
-      return;
-    }
-    
-    if (!isAuthenticated || !token) {
-      logDebugInfo("Authentication issue", { isAuthenticated, hasToken: !!token });
-      toast.error("Please login to place bets");
+    if (!selectedPlayer || !user || !token || !matchId) {
+      toast.error("Authentication required", {
+        description: "Please login to place bets"
+      });
       return;
     }
 
     setIsProcessing(true);
-    
-    // Make sure matchId is treated as a string to prevent JSON parsing issues
-    const stringMatchId = String(matchId);
-    
-    logDebugInfo("Starting bet placement", { 
-      userId,
-      matchId: stringMatchId,
-      bowlerName: selectedPlayer.name,
-      teamName: selectedPlayer.teamName,
-      predictedRunsConceded: selectedPlayer.runsConceded,
-      betAmount: amount
-    });
-
-    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/bowlerruns/place`;
-    logDebugInfo("API URL", apiUrl);
 
     try {
-      const requestBody = {
-        userId,
-        matchId: stringMatchId, // Send as string to prevent number parsing issues
-        teamName: selectedPlayer.teamName, // Ensure this is not undefined
-        bowlerName: selectedPlayer.name,
-        predictedRunsConceded: selectedPlayer.runsConceded,
-        betAmount: amount
-      };
-      
-      logDebugInfo("Request payload", requestBody);
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      logDebugInfo("Response status", { status: response.status, statusText: response.statusText });
-      
-      const responseData: BetResponse = await response.json();
-      logDebugInfo("Response data", responseData);
-
-      if (!response.ok) {
-        // Extract validation error message from the error string if available
-        let errorMessage = responseData.error || responseData.message || "Failed to place bet";
-        
-        // If it's a validation error, try to make it more user-friendly
-        if (errorMessage.includes("validation failed")) {
-          if (errorMessage.includes("teamName: Path `teamName` is required")) {
-            errorMessage = "Team name is required for this bet.";
-          } else if (errorMessage.includes("matchId: Cast to")) {
-            errorMessage = "Invalid match ID format.";
-          } else {
-            // Extract just the validation error part
-            const validationMatch = errorMessage.match(/validation failed: (.+?)(?:'|}|$)/);
-            if (validationMatch && validationMatch[1]) {
-                errorMessage = `Validation error: ${validationMatch[1]}`;
-            }
+      toast.promise(
+        fetch("/api/bowlerruns/place", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            matchId,
+            teamName: selectedPlayer.teamName,
+            bowlerName: selectedPlayer.name,
+            predictedRunsConceded: selectedPlayer.runsConceded,
+            betAmount: amount
+          })
+        }).then(async (response) => {
+          const data: BetResponse & { user?: { money: number } } = await response.json();
+          if (!response.ok) {
+            throw new Error(data.message || "Failed to place bet");
           }
+          
+          // Update user balance in zustand store if returned
+          if (data.user && data.user.money !== undefined) {
+            updateUserBalance(data.user.money);
+          } else if (user) {
+            // Subtract bet amount from current balance if not returned
+            updateUserBalance(user.money - amount);
+          }
+          
+          return data;
+        }),
+        {
+          loading: 'Placing your bowler runs bet...',
+          success: (data) => {
+            closeModal();
+            return `${data.message || "Bet placed successfully"}`;
+          },
+          error: (error) => error.message || "Bowler runs bet placement failed",
         }
-        
-        if (response.status === 400 && responseData.message === "Insufficient balance") {
-          errorMessage = "Insufficient balance to place this bet";
-        } else if (response.status === 401) {
-          errorMessage = "Authentication failed. Please login again.";
-        } else if (response.status === 403) {
-          errorMessage = "You don't have permission to place this bet.";
-        } else if (response.status === 404) {
-          errorMessage = "Bet endpoint not found. Please check API URL.";
-        }
-        
-        logDebugInfo("Error placing bet", { status: response.status, error: errorMessage });
-        toast.error("Bet Failed", {
-          description: errorMessage
-        });
-      } else {
-        logDebugInfo("Bet placed successfully", responseData);
-        toast.success(`${responseData.message}. New balance: ₹${responseData.newBalance}`);
-        
-        if (responseData.newBalance !== undefined) {
-          useAuthStore.getState().updateUserBalance(responseData.newBalance);
-        }
-        closeModal();
-      }
+      );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      logDebugInfo("Exception occurred", { error: errorMessage });
       console.error("Bet Error:", error);
       toast.error("Bet Failed", {
-        description: errorMessage
+        description: error instanceof Error ? error.message : "An unknown error occurred"
       });
     } finally {
       setIsProcessing(false);
     }
-  };
-
-  // Function to copy debug info to clipboard
-  const copyDebugInfo = () => {
-    if (debugInfo) {
-      navigator.clipboard.writeText(debugInfo)
-        .then(() => toast.success("Debug info copied to clipboard"))
-        .catch(err => toast.error("Failed to copy debug info"));
-    }
-  };
-
-  // Function to check if a player has required fields
-  const playerHasRequiredFields = (player: Player): boolean => {
-    return !!player.name && !!player.teamName;
   };
 
   return (
@@ -215,9 +112,8 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         </div>
 
         {/* Table Header */}
-        <div className="grid grid-cols-5 text-center text-sm font-semibold border-b border-gray-300">
+        <div className="grid grid-cols-4 text-center text-sm font-semibold border-b border-gray-300">
           <div className="text-left px-4 py-2 col-span-2 bg-gray-50">Bowler</div>
-          <div className="bg-gray-50 py-2">Team</div>
           <div className="bg-red-500 text-white py-2">Runs</div>
           <div className="bg-blue-500 text-white py-2">Bet</div>
         </div>
@@ -226,16 +122,11 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         {players.map((player, index) => (
           <div
             key={index}
-            className="grid grid-cols-5 items-center text-center border-b border-gray-100"
+            className="grid grid-cols-4 items-center text-center border-b border-gray-100"
           >
             {/* Name */}
             <div className="text-left px-4 py-3 text-sm font-medium text-gray-700 col-span-2 bg-white capitalize">
               {player.name}
-            </div>
-            
-            {/* Team */}
-            <div className="py-3 bg-gray-50 text-gray-700">
-              {player.teamName || <span className="text-red-500 text-xs">Missing</span>}
             </div>
 
             {/* Runs */}
@@ -247,13 +138,8 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             <div className="py-3 bg-blue-50">
               <button
                 onClick={() => handleBetClick(player)}
-                className={`${
-                  playerHasRequiredFields(player) 
-                    ? "bg-blue-100 hover:bg-blue-200 text-blue-700" 
-                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                } text-sm px-4 py-1 rounded-full font-medium transition`}
-                disabled={isProcessing || !isAuthenticated || !playerHasRequiredFields(player)}
-                title={!playerHasRequiredFields(player) ? "Missing required player information" : ""}
+                className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-sm px-4 py-1 rounded-full font-medium transition"
+                disabled={isProcessing}
               >
                 100
               </button>
@@ -262,114 +148,96 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         ))}
       </div>
 
-      {/* Modal */}
+      {/* Modal with Improved UI */}
       {selectedPlayer && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
-          <div className="bg-pink-100 rounded-lg shadow-xl w-[90%] max-w-md p-6 relative">
-            <button
-              onClick={closeModal}
-              className="absolute top-2 right-2 text-lg font-bold text-gray-700 hover:text-red-600"
-              disabled={isProcessing}
-            >
-              ×
-            </button>
-            <h2 className="text-lg font-semibold mb-4 text-center text-red-900">Place Bowler Runs Bet</h2>
-            
-            <div className="mb-4 grid grid-cols-2 gap-3">
-              <div className="text-sm text-gray-700">
-                <span className="font-medium text-gray-500">Bowler:</span><br/>
-                <span className="font-medium">{selectedPlayer.name}</span>
-              </div>
-              <div className="text-sm text-gray-700">
-                <span className="font-medium text-gray-500">Team:</span><br/>
-                <span className="font-medium">{selectedPlayer.teamName || <span className="text-red-500">Missing (Required)</span>}</span>
-              </div>
-              <div className="text-sm text-gray-700">
-                <span className="font-medium text-gray-500">Predicted Runs:</span><br/>
-                <span className="font-medium">{selectedPlayer.runsConceded}</span>
-              </div>
-              <div className="text-sm text-gray-700">
-                <span className="font-medium text-gray-500">Match ID:</span><br/>
-                <span className="font-medium">{matchId || <span className="text-red-500">Missing</span>}</span>
-              </div>
-            </div>
-            
-            {/* Debug info about authentication state */}
-            <div className="text-xs text-gray-600 mb-4 p-2 bg-gray-50 rounded">
-              <div>Auth Status: {isAuthenticated ? 'Logged In' : 'Not Logged In'}</div>
-              {user && user._id && (
-                <div>User ID: {user._id.substring(0, 8)}...</div>
-              )}
-            </div>
-
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-              min={100}
-              max={200000}
-              disabled={isProcessing}
-            />
-
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
-                <button
-                  key={val}
-                  onClick={() => setAmount(amount + val)}
-                  className="bg-orange-300 text-white py-2 rounded font-semibold text-sm hover:bg-orange-400 disabled:opacity-50"
-                  disabled={isProcessing}
-                >
-                  +{val / 1000}k
-                </button>
-              ))}
-            </div>
-
-            <div className="flex justify-between gap-3 mb-4">
-              <button
-                onClick={handlePlaceBet}
-                className="bg-green-600 text-white w-full py-2 rounded hover:bg-green-700 font-semibold disabled:opacity-50"
-                disabled={isProcessing || !isAuthenticated || !selectedPlayer.teamName}
-              >
-                {isProcessing ? 'Processing...' : 'Place Bet'}
-              </button>
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-2xl w-[90%] max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4 relative">
               <button
                 onClick={closeModal}
-                className="bg-red-500 text-white w-full py-2 rounded hover:bg-red-600 font-semibold disabled:opacity-50"
+                className="absolute top-3 right-3 text-white bg-red-700 hover:bg-red-800 rounded-full w-8 h-8 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-red-400"
                 disabled={isProcessing}
               >
-                Cancel
+                ×
               </button>
+              <h2 className="text-xl font-bold text-white">Place Bowler Runs Bet</h2>
             </div>
-
-            {/* Missing Requirements Warning */}
-            {(!selectedPlayer.teamName) && (
-              <div className="mb-4 p-2 bg-yellow-100 border border-yellow-300 rounded text-yellow-800 text-sm">
-                <strong>Warning:</strong> Cannot place bet because some required information is missing:
-                <ul className="list-disc pl-5 mt-1">
-                  {!selectedPlayer.teamName && <li>Team name is required</li>}
-                </ul>
+            
+            {/* Content */}
+            <div className="p-6">
+              <div className="bg-blue-50 p-4 rounded-lg mb-5 border border-blue-100">
+                <div className="text-gray-800 mb-2">
+                  <span className="font-semibold">Bowler:</span> {selectedPlayer.name}
+                </div>
+                <div className="text-gray-800 mb-2">
+                  <span className="font-semibold">Team:</span> {selectedPlayer.teamName || 'N/A'}
+                </div>
+                <div className="text-gray-800">
+                  <span className="font-semibold">Predicted Runs:</span> {selectedPlayer.runsConceded}
+                </div>
               </div>
-            )}
 
-            {/* Debug Information Section */}
-            {debugInfo && (
-              <div className="mt-4 border-t border-gray-300 pt-4">
-                <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-semibold text-gray-700">Debug Information</h3>
-                  <button 
-                    onClick={copyDebugInfo}
-                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded"
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Bet Amount (₹)</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 text-lg font-medium"
+                min={100}
+                max={200000}
+                disabled={isProcessing}
+              />
+
+              <div className="grid grid-cols-5 gap-2 mb-6">
+                {[1000, 2000, 5000, 10000, 20000].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setAmount(val)}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded font-medium text-sm"
+                    disabled={isProcessing}
                   >
-                    Copy
+                    {val}
                   </button>
-                </div>
-                <div className="bg-black text-green-400 p-2 rounded text-xs h-40 overflow-y-auto font-mono whitespace-pre">
-                  {debugInfo}
-                </div>
+                ))}
               </div>
-            )}
+              
+              <div className="grid grid-cols-5 gap-2 mb-6">
+                {[25000, 50000, 75000, 100000, 200000].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setAmount(val)}
+                    className="bg-orange-200 hover:bg-orange-300 text-orange-800 py-2 rounded font-medium text-sm"
+                    disabled={isProcessing}
+                  >
+                    {val/1000}K
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-between gap-3 mt-4">
+                <button
+                  onClick={handlePlaceBet}
+                  className="bg-green-600 text-white w-full py-3 rounded-md hover:bg-green-700 font-bold text-lg disabled:opacity-50 transition-colors"
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? 'Processing...' : 'Place Bet'}
+                </button>
+                <button
+                  onClick={closeModal}
+                  className="bg-gray-200 text-gray-800 w-1/3 py-3 rounded-md hover:bg-gray-300 font-medium disabled:opacity-50 transition-colors"
+                  disabled={isProcessing}
+                >
+                  Cancel
+                </button>
+              </div>
+              
+              {user && (
+                <div className="text-center mt-4 text-sm text-gray-600">
+                  Current Balance: <span className="font-bold text-green-600">₹{user.money.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
