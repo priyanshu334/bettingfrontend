@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { toast } from "sonner";
-import { useAuthStore } from "@/stores/authStore";
+import { useAuthStore } from "@/stores/authStore"; // Update this path to match your project structure
 
 interface Player {
   name: string;
@@ -30,70 +30,23 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [apiError, setApiError] = useState<string | null>(null);
   
   // Get authentication data from zustand store
   const { token, user, updateUserBalance } = useAuthStore();
 
   const handleBetClick = (player: Player) => {
     setSelectedPlayer(player);
-    setApiError(null); // Reset any previous errors
   };
 
   const closeModal = () => {
     setSelectedPlayer(null);
     setAmount(100);
-    setApiError(null);
   };
 
-  // Debug logging effect - will help track state changes
-  useEffect(() => {
-    if (selectedPlayer) {
-      console.log("Selected player data:", selectedPlayer);
-      console.log("Current user authentication:", { 
-        isAuthenticated: !!token, 
-        hasUserData: !!user,
-        matchId: matchId
-      });
-    }
-  }, [selectedPlayer, token, user, matchId]);
-
   const handlePlaceBet = async () => {
-    setApiError(null);
-    
-    // Enhanced validation
-    if (!token) {
+    if (!selectedPlayer || !user || !token || !matchId) {
       toast.error("Authentication required", {
         description: "Please login to place bets"
-      });
-      return;
-    }
-    
-    if (!selectedPlayer) {
-      toast.error("Selection error", {
-        description: "Please select a bowler"
-      });
-      return;
-    }
-    
-    if (!matchId) {
-      toast.error("Match ID missing", {
-        description: "Invalid match selection"
-      });
-      return;
-    }
-    
-    if (!selectedPlayer.teamName) {
-      toast.error("Team data missing", {
-        description: "Selected bowler has incomplete data"
-      });
-      console.error("Missing team name for player:", selectedPlayer);
-      return;
-    }
-    
-    if (user && amount > user.money) {
-      toast.error("Insufficient balance", {
-        description: "You don't have enough funds to place this bet"
       });
       return;
     }
@@ -101,14 +54,6 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
     setIsProcessing(true);
 
     try {
-      console.log("Sending bet request with data:", {
-        matchId,
-        teamName: selectedPlayer.teamName,
-        bowlerName: selectedPlayer.name,
-        predictedRunsConceded: selectedPlayer.runsConceded,
-        betAmount: amount
-      });
-      
       toast.promise(
         fetch(`https://backend.nurdcells.com/api/bowlerruns/place`, {
           method: "POST",
@@ -117,30 +62,20 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             "Authorization": `Bearer ${token}`
           },
           body: JSON.stringify({
+            userId: user._id, // Added userId as required by the API
             matchId,
-            teamName: selectedPlayer.teamName,
             bowlerName: selectedPlayer.name,
             predictedRunsConceded: selectedPlayer.runsConceded,
             betAmount: amount
           })
         }).then(async (response) => {
-          const data: BetResponse & { user?: { money: number } } = await response.json();
-          
-          console.log("API response:", {
-            status: response.status,
-            statusText: response.statusText,
-            data: data
-          });
-          
+          const data: BetResponse = await response.json();
           if (!response.ok) {
-            throw new Error(data.message || `Server error (${response.status}): ${response.statusText}`);
+            throw new Error(data.message || "Failed to place bet");
           }
           
-          // Update user balance in zustand store if returned
-          if (data.user && data.user.money !== undefined) {
-            updateUserBalance(data.user.money);
-          } else if (user) {
-            // Subtract bet amount from current balance if not returned
+          // Update user balance by subtracting bet amount as done in API
+          if (user) {
             updateUserBalance(user.money - amount);
           }
           
@@ -152,17 +87,14 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             closeModal();
             return `${data.message || "Bet placed successfully"}`;
           },
-          error: (error) => {
-            setApiError(error.message || "Bowler runs bet placement failed");
-            return error.message || "Bowler runs bet placement failed";
-          },
+          error: (error) => error.message || "Bowler runs bet placement failed",
         }
       );
     } catch (error) {
       console.error("Bet Error:", error);
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      setApiError(errorMessage);
-      toast.error("Bet Failed", { description: errorMessage });
+      toast.error("Bet Failed", {
+        description: error instanceof Error ? error.message : "An unknown error occurred"
+      });
     } finally {
       setIsProcessing(false);
     }
@@ -213,9 +145,9 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
         ))}
       </div>
 
-      {/* Improved Modal UI */}
+      {/* Modal with Improved UI */}
       {selectedPlayer && (
-        <div className="fixed inset-0 z-50 bg-black bg-opacity-75 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center">
           <div className="bg-white rounded-lg shadow-2xl w-[90%] max-w-md overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4 relative">
@@ -235,72 +167,52 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
                 <div className="text-gray-800 mb-2">
                   <span className="font-semibold">Bowler:</span> {selectedPlayer.name}
                 </div>
-                <div className="text-gray-800 mb-2">
-                  <span className="font-semibold">Team:</span> {selectedPlayer.teamName || 'N/A'}
-                </div>
+                {selectedPlayer.teamName && (
+                  <div className="text-gray-800 mb-2">
+                    <span className="font-semibold">Team:</span> {selectedPlayer.teamName}
+                  </div>
+                )}
                 <div className="text-gray-800">
                   <span className="font-semibold">Predicted Runs:</span> {selectedPlayer.runsConceded}
                 </div>
               </div>
 
-              {/* Improved Bet Amount Input Section */}
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Bet Amount (₹)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-3 text-lg font-medium text-gray-500">₹</span>
-                  <input
-                    type="number"
-                    value={amount}
-                    onChange={(e) => setAmount(Number(e.target.value))}
-                    className="w-full pl-8 pr-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg font-medium bg-white text-gray-800"
-                    min={100}
-                    max={200000}
-                    disabled={isProcessing}
-                  />
-                </div>
-              </div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Bet Amount (₹)</label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(Number(e.target.value))}
+                className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 text-lg font-medium"
+                min={100}
+                max={200000}
+                disabled={isProcessing}
+              />
 
-              {/* Quick Amount Buttons */}
-              <div className="mb-2">
-                <p className="text-xs text-gray-500 mb-1">Quick Select:</p>
-                <div className="grid grid-cols-5 gap-2 mb-3">
-                  {[1000, 2000, 5000, 10000, 20000].map((val) => (
-                    <button
-                      key={val}
-                      onClick={() => setAmount(val)}
-                      className="bg-gray-100 hover:bg-gray-200 text-gray-800 py-2 rounded font-medium text-sm border border-gray-200"
-                      disabled={isProcessing}
-                    >
-                      {val}
-                    </button>
-                  ))}
-                </div>
+              <div className="grid grid-cols-5 gap-2 mb-6">
+                {[1000, 2000, 5000, 10000, 20000].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setAmount(val)}
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded font-medium text-sm"
+                    disabled={isProcessing}
+                  >
+                    {val}
+                  </button>
+                ))}
               </div>
               
-              <div className="mb-6">
-                <div className="grid grid-cols-5 gap-2">
-                  {[25000, 50000, 75000, 100000, 200000].map((val) => (
-                    <button
-                      key={val}
-                      onClick={() => setAmount(val)}
-                      className="bg-orange-100 hover:bg-orange-200 text-orange-800 py-2 rounded font-medium text-sm border border-orange-200"
-                      disabled={isProcessing}
-                    >
-                      {val/1000}K
-                    </button>
-                  ))}
-                </div>
+              <div className="grid grid-cols-5 gap-2 mb-6">
+                {[25000, 50000, 75000, 100000, 200000].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setAmount(val)}
+                    className="bg-orange-200 hover:bg-orange-300 text-orange-800 py-2 rounded font-medium text-sm"
+                    disabled={isProcessing}
+                  >
+                    {val/1000}K
+                  </button>
+                ))}
               </div>
-
-              {/* Error Display */}
-              {apiError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md mb-4 text-sm">
-                  <p className="font-bold">Error:</p>
-                  <p>{apiError}</p>
-                </div>
-              )}
 
               <div className="flex justify-between gap-3 mt-4">
                 <button
