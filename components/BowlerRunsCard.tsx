@@ -30,21 +30,31 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   
   // Get authentication data from zustand store
   const { token, user, updateUserBalance } = useAuthStore();
 
   const handleBetClick = (player: Player) => {
     setSelectedPlayer(player);
+    console.log("Selected player for betting:", player);
   };
 
   const closeModal = () => {
     setSelectedPlayer(null);
     setAmount(100);
+    setDebugInfo(null);
   };
 
   const handlePlaceBet = async () => {
     if (!selectedPlayer || !user || !token || !matchId) {
+      const errorMsg = "Authentication required - Please login to place bets";
+      console.error("Bet validation error:", { 
+        hasSelectedPlayer: !!selectedPlayer, 
+        hasUser: !!user, 
+        hasToken: !!token, 
+        matchId 
+      });
       toast.error("Authentication required", {
         description: "Please login to place bets"
       });
@@ -52,8 +62,23 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
     }
 
     setIsProcessing(true);
+    console.log("Starting bet placement process...");
 
+    // Prepare request body for better debugging
+    const requestBody = {
+      userId: user._id,
+      matchId,
+      bowlerName: selectedPlayer.name,
+      predictedRunsConceded: selectedPlayer.runsConceded,
+      betAmount: amount
+    };
+
+    console.log("Preparing bet request with data:", requestBody);
+    
     try {
+      const requestStartTime = Date.now();
+      console.log(`Sending request to API at ${new Date().toISOString()}`);
+      
       toast.promise(
         fetch(`https://backend.nurdcells.com/api/bowlerruns/place`, {
           method: "POST",
@@ -61,41 +86,65 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`
           },
-          body: JSON.stringify({
-            userId: user._id, // Added userId as required by the API
-            matchId,
-            bowlerName: selectedPlayer.name,
-            predictedRunsConceded: selectedPlayer.runsConceded,
-            betAmount: amount
-          })
+          body: JSON.stringify(requestBody)
         }).then(async (response) => {
-          const data: BetResponse = await response.json();
+          const requestDuration = Date.now() - requestStartTime;
+          console.log(`API response received in ${requestDuration}ms with status: ${response.status}`);
+          
+          const responseData: BetResponse = await response.json();
+          console.log("API response data:", responseData);
+          
+          // Store debug info for display
+          setDebugInfo({
+            request: requestBody,
+            response: responseData,
+            status: response.status,
+            duration: requestDuration,
+            timestamp: new Date().toISOString()
+          });
+          
           if (!response.ok) {
-            throw new Error(data.message || "Failed to place bet");
+            throw new Error(responseData.message || `Failed to place bet (Status: ${response.status})`);
           }
           
           // Update user balance by subtracting bet amount as done in API
           if (user) {
-            updateUserBalance(user.money - amount);
+            const previousBalance = user.money;
+            const newBalance = user.money - amount;
+            console.log(`Updating user balance: ${previousBalance} → ${newBalance}`);
+            updateUserBalance(newBalance);
           }
           
-          return data;
+          return responseData;
         }),
         {
           loading: 'Placing your bowler runs bet...',
           success: (data) => {
+            console.log("Bet placed successfully:", data);
             closeModal();
             return `${data.message || "Bet placed successfully"}`;
           },
-          error: (error) => error.message || "Bowler runs bet placement failed",
+          error: (error) => {
+            console.error("Bet API error:", error);
+            return error.message || "Bowler runs bet placement failed";
+          },
         }
       );
     } catch (error) {
-      console.error("Bet Error:", error);
+      console.error("Bet placement exception:", error);
+      
+      // Provide detailed error for debugging
+      const errorDetails = error instanceof Error 
+        ? { message: error.message, stack: error.stack } 
+        : { message: "Unknown error", error };
+      
+      console.error("Detailed error information:", errorDetails);
+      
       toast.error("Bet Failed", {
         description: error instanceof Error ? error.message : "An unknown error occurred"
       });
     } finally {
+      console.log("Bet placement process completed");
       setIsProcessing(false);
     }
   };
@@ -181,7 +230,11 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               <input
                 type="number"
                 value={amount}
-                onChange={(e) => setAmount(Number(e.target.value))}
+                onChange={(e) => {
+                  const newAmount = Number(e.target.value);
+                  setAmount(newAmount);
+                  console.log(`Bet amount updated: ${newAmount}`);
+                }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 text-lg font-medium"
                 min={100}
                 max={200000}
@@ -192,7 +245,10 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
                 {[1000, 2000, 5000, 10000, 20000].map((val) => (
                   <button
                     key={val}
-                    onClick={() => setAmount(val)}
+                    onClick={() => {
+                      setAmount(val);
+                      console.log(`Quick amount selected: ${val}`);
+                    }}
                     className="bg-gray-200 hover:bg-gray-300 text-gray-800 py-2 rounded font-medium text-sm"
                     disabled={isProcessing}
                   >
@@ -205,7 +261,10 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
                 {[25000, 50000, 75000, 100000, 200000].map((val) => (
                   <button
                     key={val}
-                    onClick={() => setAmount(val)}
+                    onClick={() => {
+                      setAmount(val);
+                      console.log(`Quick amount selected: ${val}K`);
+                    }}
                     className="bg-orange-200 hover:bg-orange-300 text-orange-800 py-2 rounded font-medium text-sm"
                     disabled={isProcessing}
                   >
@@ -234,6 +293,36 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
               {user && (
                 <div className="text-center mt-4 text-sm text-gray-600">
                   Current Balance: <span className="font-bold text-green-600">₹{user.money.toLocaleString()}</span>
+                </div>
+              )}
+              
+              {/* Debug Information Panel */}
+              {debugInfo && (
+                <div className="mt-6 pt-4 border-t border-gray-200">
+                  <div className="flex justify-between items-center mb-2">
+                    <h3 className="font-semibold text-gray-700">Debug Information</h3>
+                    <button 
+                      onClick={() => {
+                        console.log("Debug info copied to clipboard:", debugInfo);
+                        navigator.clipboard.writeText(JSON.stringify(debugInfo, null, 2));
+                        toast.success("Debug info copied to clipboard");
+                      }}
+                      className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-2 py-1 rounded"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <div className="bg-gray-50 p-3 rounded text-xs font-mono overflow-auto max-h-40">
+                    <div><span className="text-blue-600">Status:</span> {debugInfo.status}</div>
+                    <div><span className="text-blue-600">Time:</span> {debugInfo.timestamp}</div>
+                    <div><span className="text-blue-600">Duration:</span> {debugInfo.duration}ms</div>
+                    {debugInfo.response?.message && (
+                      <div><span className="text-blue-600">Message:</span> {debugInfo.response.message}</div>
+                    )}
+                    {debugInfo.response?.bet && (
+                      <div><span className="text-blue-600">Bet ID:</span> {debugInfo.response.bet._id || debugInfo.response.bet.id}</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
