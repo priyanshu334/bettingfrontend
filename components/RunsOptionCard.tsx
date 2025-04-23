@@ -261,7 +261,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
         payload: BetPayload; 
         status: "pending" | "success";
       } = {
-        endpoint: "/api/RunsAndWickets/place",
+        endpoint: `${[process.env.NEXT_PUBLIC_API_URL]}/api/RunsAndWickets/place`,
         method: "POST",
         headers: { Authorization: `Bearer ${token ? "valid_token" : "missing_token"}` },
         payload,
@@ -272,6 +272,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
 
       const response: AxiosResponse<ApiResponse> = await axios.post<ApiResponse>(
         `${process.env.NEXT_PUBLIC_API_URL}/api/RunsAndWickets/place`, 
+
         payload, 
         {
           headers: {
