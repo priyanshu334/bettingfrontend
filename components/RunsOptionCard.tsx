@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import axios from "axios";
+import { useAuthStore } from "@/stores/authStore"; // Import the auth store
 
 export type MarketType = "runs" | "wickets" | "fours" | "sixes" | "match" | "tied" | string;
 export type StatType = "total" | "highest" | "individual" | string;
@@ -21,7 +22,6 @@ interface RunsOptionsCardProps {
   options: Option[];
   matchId: number;
   teamId: number;
-  userId: string;
   isLoading?: boolean;
 }
 
@@ -30,9 +30,11 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
   options, 
   matchId, 
   teamId, 
-  userId,
   isLoading: propsLoading = false
 }) => {
+  // Get auth information from the store
+  const { token, user, updateUserBalance } = useAuthStore();
+  
   const [selectedOption, setSelectedOption] = useState<Option | null>(null);
   const [selectedChoice, setSelectedChoice] = useState<BetChoice | "">("");
   const [selectedOdds, setSelectedOdds] = useState<number | null>(null);
@@ -60,7 +62,13 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
   };
 
   const handlePlaceBet = async () => {
-    if (!selectedOption || !selectedOdds || !userId || !matchId || !teamId) {
+    // Check if user is authenticated
+    if (!token || !user) {
+      setError("You must be logged in to place a bet");
+      return;
+    }
+
+    if (!selectedOption || !selectedOdds) {
       setError("Missing required information");
       return;
     }
@@ -70,38 +78,62 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
       return;
     }
 
+    // Check if user has sufficient balance
+    if (user.money < amount) {
+      setError("Insufficient balance");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
       const betCondition = selectedChoice === "Yes" ? "true" : "false";
       
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/bets/place`, {
-        userId,
-        matchId,
-        teamId,
-        marketType: selectedOption.marketType,
-        betCondition,
-        overs: selectedOption.overs,
-        statType: selectedOption.statType,
-        odds: selectedOdds,
-        amount
-      });
+      // Set up request with auth token
+      const config = {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      };
+      
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/bets/place`, 
+        {
+          userId: user._id,
+          matchId,
+          teamId,
+          marketType: selectedOption.marketType,
+          betCondition,
+          overs: selectedOption.overs,
+          statType: selectedOption.statType,
+          odds: selectedOdds,
+          amount
+        },
+        config
+      );
 
       if (response.data.message === "Bet placed successfully") {
+        // Update user balance in the store
+        updateUserBalance(user.money - amount);
         closeModal();
-        // Consider adding a toast notification here
+        // You might want to add a toast notification here
       } else {
         setError(response.data.message || "Failed to place bet");
       }
     } catch (err: any) {
       console.error("Error placing bet:", err);
-      setError(
-        err.response?.data?.error || 
-        err.response?.data?.message || 
-        err.message || 
-        "Failed to place bet"
-      );
+      
+      if (err.response?.status === 401) {
+        setError("Your session has expired. Please log in again.");
+      } else {
+        setError(
+          err.response?.data?.error || 
+          err.response?.data?.message || 
+          err.message || 
+          "Failed to place bet"
+        );
+      }
     } finally {
       setIsLoading(false);
     }
@@ -208,6 +240,13 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
                 <span className="text-sm text-gray-600">Odds:</span>
                 <span className="font-medium">{selectedOdds.toFixed(2)}</span>
               </div>
+              
+              {user && (
+                <div className="flex justify-between">
+                  <span className="text-sm text-gray-600">Your Balance:</span>
+                  <span className="font-medium">₹{user.money.toLocaleString()}</span>
+                </div>
+              )}
             </div>
 
             <div className="mb-4">
@@ -241,18 +280,32 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
               ))}
             </div>
 
+            {/* Potential winnings */}
+            <div className="mb-4 p-3 bg-green-100 rounded">
+              <div className="flex justify-between text-sm">
+                <span className="font-medium text-gray-700">Potential Return:</span>
+                <span className="font-bold text-green-700">₹{(amount * selectedOdds).toFixed(2)}</span>
+              </div>
+            </div>
+
             {error && (
               <div className="mb-4 p-2 bg-red-100 text-red-700 rounded text-sm">
                 {error}
               </div>
             )}
 
+            {!token && (
+              <div className="mb-4 p-2 bg-yellow-100 text-yellow-700 rounded text-sm">
+                Please log in to place a bet
+              </div>
+            )}
+
             <div className="flex justify-between gap-3">
               <button
                 onClick={handlePlaceBet}
-                disabled={isLoading}
+                disabled={isLoading || !token}
                 className={`flex-1 py-3 rounded font-semibold transition-colors ${
-                  isLoading
+                  isLoading || !token
                     ? "bg-gray-400 cursor-not-allowed"
                     : "bg-green-600 hover:bg-green-700 text-white"
                 }`}
