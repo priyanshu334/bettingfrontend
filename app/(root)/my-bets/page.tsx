@@ -35,7 +35,7 @@ export default function UserBets() {
       
       setLoading(true);
       try {
-        const res = await axios.get(`https://backend.nurdcells.com/api/userbets/${userId}`);
+        const res = await axios.get(`https://backend.nurdcells.com/api/userbets/userBets/${userId}`);
         
         // Calculate potential winnings for each bet
         const processedPlacedBets = res.data.placedBets.map((bet: Bet) => ({
