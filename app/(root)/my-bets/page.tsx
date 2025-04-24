@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { useAuthStore } from "@/stores/authStore"; // Update path as needed
+import { useAuthStore } from "@/stores/authStore";
 import axios from "axios";
 import { CalendarIcon, DollarSign, Percent, Trophy } from "lucide-react";
 
@@ -21,7 +21,7 @@ interface Bet {
 }
 
 export default function UserBets() {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
   const userId = user?._id;
   
   const [placedBets, setPlacedBets] = useState<Bet[]>([]);
@@ -31,11 +31,15 @@ export default function UserBets() {
 
   useEffect(() => {
     const fetchBets = async () => {
-      if (!userId) return;
+      if (!userId || !token) return;
       
       setLoading(true);
       try {
-        const res = await axios.get(`https://backend.nurdcells.com/api/userbets/userBets/${userId}`);
+        const res = await axios.get(`https://backend.nurdcells.com/api/userbets/userBets/${userId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
         
         // Calculate potential winnings for each bet
         const processedPlacedBets = res.data.placedBets.map((bet: Bet) => ({
@@ -59,7 +63,7 @@ export default function UserBets() {
     };
 
     fetchBets();
-  }, [userId]);
+  }, [userId, token]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "N/A";
