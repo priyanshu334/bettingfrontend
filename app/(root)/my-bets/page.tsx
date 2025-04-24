@@ -35,7 +35,7 @@ export default function UserBets() {
       
       setLoading(true);
       try {
-        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/userBets/${userId}`);
+        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/userbets/${userId}`);
         
         // Calculate potential winnings for each bet
         const processedPlacedBets = res.data.placedBets.map((bet: Bet) => ({
