@@ -129,7 +129,7 @@ export default function UserBets() {
             </div>
             <div>
               <p className="text-sm font-medium text-slate-900">Amount</p>
-              <p className="text-sm font-bold text-orange-700">₹{bet.amount.toLocaleString()}</p>
+              <p className="text-sm font-bold text-orange-700">₹{(bet.amount || 0).toLocaleString()}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -159,7 +159,7 @@ export default function UserBets() {
             </div>
             <div>
               <p className="text-sm font-medium text-slate-900">Potential Win</p>
-              <p className="text-sm font-bold text-orange-700">₹{bet.potentialWinnings?.toLocaleString()}</p>
+              <p className="text-sm font-bold text-orange-700">₹{(bet.potentialWinnings || 0).toLocaleString()}</p>
             </div>
           </div>
         </div>
@@ -210,7 +210,7 @@ export default function UserBets() {
         </div>
         <div className="text-right bg-white bg-opacity-20 p-3 rounded-lg backdrop-blur-sm">
           <p className="text-sm text-orange-100">Available Balance</p>
-          <p className="text-xl font-bold text-white">₹{user?.money.toLocaleString()}</p>
+          <p className="text-xl font-bold text-white">₹{(user?.money || 0).toLocaleString()}</p>
         </div>
       </div>
 
