@@ -31,6 +31,8 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  // Add state for success popup
+  const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
   
   // Get authentication data from zustand store
   const { token, user, updateUserBalance } = useAuthStore();
@@ -44,6 +46,17 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
     setSelectedPlayer(null);
     setAmount(100);
     setDebugInfo(null);
+  };
+
+  // Add function to close success popup
+  const closeSuccessPopup = () => {
+    setShowSuccessPopup(false);
+  };
+
+  // Add function to navigate to bets page
+  const navigateToBets = () => {
+    window.location.href = '/my-bets'; // Simple navigation
+    closeSuccessPopup();
   };
 
   const handlePlaceBet = async () => {
@@ -115,13 +128,16 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
             updateUserBalance(newBalance);
           }
           
+          // Show success popup after successful bet
+          setShowSuccessPopup(true);
+          
+          closeModal();
           return responseData;
         }),
         {
           loading: 'Placing your bowler runs bet...',
           success: (data) => {
             console.log("Bet placed successfully:", data);
-            closeModal();
             return `${data.message || "Bet placed successfully"}`;
           },
           error: (error) => {
@@ -325,6 +341,48 @@ const BowlerRunsCard: React.FC<BowlerRunsCardProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Popup Dialog */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <button
+              onClick={closeSuccessPopup}
+              className="absolute top-3 right-3 text-xl font-bold text-gray-700 hover:text-red-600 transition-colors"
+            >
+              ×
+            </button>
+            
+            <div className="text-center">
+              {/* Success Icon */}
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
+                <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              
+              <h2 className="text-2xl font-bold mb-2 text-gray-800">Bet Placed Successfully!</h2>
+              <p className="text-gray-600 mb-6">Your bowler runs bet has been placed successfully and can be viewed in your bet history.</p>
+              
+              <div className="flex gap-4">
+                <button
+                  onClick={navigateToBets}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold transition-colors"
+                >
+                  See Bets
+                </button>
+                
+                <button
+                  onClick={closeSuccessPopup}
+                  className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 font-semibold transition-colors"
+                >
+                  Continue Betting
+                </button>
+              </div>
             </div>
           </div>
         </div>

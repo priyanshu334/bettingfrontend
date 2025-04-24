@@ -180,6 +180,53 @@ const BetDialog: React.FC<{
   );
 };
 
+// New Success Dialog Component
+const SuccessDialog: React.FC<{
+  onClose: () => void;
+  navigateToBets: () => void;
+}> = ({ onClose, navigateToBets }) => {
+  return (
+    <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-3 right-3 text-xl font-bold text-gray-700 hover:text-red-600 transition-colors"
+        >
+          ×
+        </button>
+        
+        <div className="text-center">
+          {/* Success Icon */}
+          <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
+            <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+          </div>
+          
+          <h2 className="text-2xl font-bold mb-2 text-gray-800">Bet Placed Successfully!</h2>
+          <p className="text-gray-600 mb-6">Your bet has been placed successfully and can be viewed in your bet history.</p>
+          
+          <div className="flex gap-4">
+            <button
+              onClick={navigateToBets}
+              className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold transition-colors"
+            >
+              See Bets
+            </button>
+            
+            <button
+              onClick={onClose}
+              className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 font-semibold transition-colors"
+            >
+              Continue Betting
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MatchCard: React.FC<MatchOddsProps> = ({ 
   matchOdds, 
   bookmakerOdds, 
@@ -201,6 +248,9 @@ const MatchCard: React.FC<MatchOddsProps> = ({
     betType: "",
     teamId: ""
   });
+  
+  // Add state for success popup
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
 
   const handlePlaceBet = async (amount: string) => {
     if (!userId || !matchId) {
@@ -251,7 +301,12 @@ const MatchCard: React.FC<MatchOddsProps> = ({
           `Bet ID: ${data.bet?._id}`
       });
       
+      // Close the bet dialog
       setShowBetDialog(false);
+      
+      // Show success popup
+      setShowSuccessPopup(true);
+      
     } catch (error) {
       console.error("Bet Error:", error);
       toast.error("Bet Failed", {
@@ -287,6 +342,17 @@ const MatchCard: React.FC<MatchOddsProps> = ({
       teamId
     });
     setShowBetDialog(true);
+  };
+  
+  // Close success popup
+  const closeSuccessPopup = () => {
+    setShowSuccessPopup(false);
+  };
+  
+  // Navigate to bets page
+  const navigateToBets = () => {
+    window.location.href = '/my-bets'; // Simple navigation
+    closeSuccessPopup();
   };
 
   return (
@@ -449,7 +515,7 @@ const MatchCard: React.FC<MatchOddsProps> = ({
           </div>
         </div>
 
-        {/* User Balance Display (Added) */}
+        {/* User Balance Display */}
         {user && (
           <div className="bg-amber-100 p-3 rounded-md shadow-sm text-center">
             <div className="text-sm text-gray-700">Current Balance</div>
@@ -466,6 +532,14 @@ const MatchCard: React.FC<MatchOddsProps> = ({
             onClose={() => setShowBetDialog(false)}
             onPlaceBet={handlePlaceBet}
             isProcessing={isProcessing}
+          />
+        )}
+        
+        {/* Success Dialog */}
+        {showSuccessPopup && (
+          <SuccessDialog
+            onClose={closeSuccessPopup}
+            navigateToBets={navigateToBets}
           />
         )}
       </div>

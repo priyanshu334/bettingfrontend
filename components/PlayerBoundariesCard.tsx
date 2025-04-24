@@ -32,6 +32,8 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  // Add state for success popup
+  const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
   
   // Get user authentication data from store
   const { user, token, updateUserBalance } = useAuthStore();
@@ -46,6 +48,17 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
     setAmount(100);
   };
 
+  // Add function to close success popup
+  const closeSuccessPopup = () => {
+    setShowSuccessPopup(false);
+  };
+
+  // Add function to navigate to bets page
+  const navigateToBets = () => {
+    window.location.href = '/my-bets';
+    closeSuccessPopup();
+  };
+
   const handlePlaceBet = async () => {
     if (!selectedPlayer || !userId || !matchId) {
       toast.error("Missing information", { 
@@ -57,43 +70,44 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
     setIsProcessing(true);
 
     try {
-      toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/boundarybet/place`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            userId,
-            matchId,
-            teamName: selectedPlayer.teamName,
-            playerName: selectedPlayer.name,
-            predictedBoundaries: selectedPlayer.boundaries,
-            betAmount: amount
-          })
-        }).then(async (response) => {
-          const data: BetResponse = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || "Failed to place bet");
-          }
-          
-          // Update user balance in store if provided in response
-          if (data.newBalance !== undefined) {
-            updateUserBalance(data.newBalance);
-          }
-          
-          return data;
-        }),
-        {
-          loading: 'Placing your boundary bet...',
-          success: (data) => {
-            closeModal();
-            return `${data.message}. New balance: ₹${data.newBalance?.toLocaleString() || user?.money.toLocaleString()}`;
-          },
-          error: (error) => error.message || "Boundary bet placement failed",
-        }
-      );
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/boundarybet/place`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          userId,
+          matchId,
+          teamName: selectedPlayer.teamName,
+          playerName: selectedPlayer.name,
+          predictedBoundaries: selectedPlayer.boundaries,
+          betAmount: amount
+        })
+      });
+      
+      const data: BetResponse = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to place bet");
+      }
+      
+      // Update user balance in store if provided in response
+      if (data.newBalance !== undefined) {
+        updateUserBalance(data.newBalance);
+      }
+      
+      // Close the modal
+      closeModal();
+      
+      // Show success popup
+      setShowSuccessPopup(true);
+      
+      // Also show toast notification
+      toast.success(data.message, {
+        description: `New balance: ₹${data.newBalance?.toLocaleString() || user?.money.toLocaleString()}`
+      });
+      
     } catch (error) {
       console.error("Bet Error:", error);
       toast.error("Bet Failed", {
@@ -201,9 +215,9 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
                   {[100, 500, 1000, 2000, 5000, 10000, 25000, 50000, 75000, 100000].map((val) => (
                     <button
                       key={val}
-                      onClick={() => setAmount(amount + val)}
+                      onClick={() => setAmount(Math.min((user?.money || 0), amount + val))}
                       className="bg-blue-100 text-blue-700 py-1 px-2 rounded font-medium text-xs hover:bg-blue-200 disabled:opacity-50"
-                      disabled={isProcessing}
+                      disabled={isProcessing || (amount + val) > (user?.money || 0)}
                     >
                       {val >= 1000 ? `+${val/1000}k` : `+${val}`}
                     </button>
@@ -248,6 +262,48 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
                   Insufficient balance. Please enter a lower amount.
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Popup */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <button
+              onClick={closeSuccessPopup}
+              className="absolute top-3 right-3 text-xl font-bold text-gray-700 hover:text-red-600 transition-colors"
+            >
+              ×
+            </button>
+            
+            <div className="text-center">
+              {/* Success Icon */}
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
+                <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              
+              <h2 className="text-2xl font-bold mb-2 text-gray-800">Bet Placed Successfully!</h2>
+              <p className="text-gray-600 mb-6">Your boundaries bet has been placed successfully and can be viewed in your bet history.</p>
+              
+              <div className="flex gap-4">
+                <button
+                  onClick={navigateToBets}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold transition-colors"
+                >
+                  See Bets
+                </button>
+                
+                <button
+                  onClick={closeSuccessPopup}
+                  className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 font-semibold transition-colors"
+                >
+                  Continue Betting
+                </button>
+              </div>
             </div>
           </div>
         </div>

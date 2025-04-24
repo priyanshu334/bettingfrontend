@@ -21,6 +21,7 @@ interface BetResponse {
   message: string;
   newBalance?: number;
   error?: string;
+  bet?: any;
 }
 
 const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, players }) => {
@@ -29,6 +30,8 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, playe
   const [selectedBetType, setSelectedBetType] = useState<string>("");
   const [amount, setAmount] = useState<number>(100);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  // Add state for success popup
+  const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
 
   const openBetModal = (player: Player, betType: string) => {
     setSelectedPlayer(player);
@@ -41,48 +44,60 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, playe
     setAmount(100);
   };
 
+  // Add function to close success popup
+  const closeSuccessPopup = () => {
+    setShowSuccessPopup(false);
+  };
+
+  // Add function to navigate to bets page
+  const navigateToBets = () => {
+    window.location.href = '/my-bets'; // Simple navigation
+    closeSuccessPopup();
+  };
+
   const handlePlaceBet = async () => {
     if (!selectedPlayer || !selectedBetType || !user) return;
 
     setIsProcessing(true);
 
     try {
-      toast.promise(
-        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerruns/place`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}` // Add token for authentication
-          },
-          body: JSON.stringify({
-            userId: user._id,
-            matchId,
-            playerId: selectedPlayer.id,
-            playerName: selectedPlayer.name,
-            betType: selectedBetType.split(":")[0], // Extract bet type (e.g., "50+")
-            amount,
-            odds: parseFloat(selectedBetType.split(":")[1]) // Extract odds from betType string
-          })
-        }).then(async (response) => {
-          const data: BetResponse = await response.json();
-          if (!response.ok) {
-            throw new Error(data.error || "Failed to place bet");
-          }
-          return data;
-        }),
-        {
-          loading: 'Placing your bet...',
-          success: (data) => {
-            // Update user balance in the store
-            if (data.newBalance !== undefined) {
-              updateUserBalance(data.newBalance);
-            }
-            closeModal();
-            return `${data.message}. New balance: ₹${data.newBalance?.toLocaleString()}`;
-          },
-          error: (error) => error.message || "Bet placement failed",
-        }
-      );
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerruns/place`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}` // Add token for authentication
+        },
+        body: JSON.stringify({
+          userId: user._id,
+          matchId,
+          playerId: selectedPlayer.id,
+          playerName: selectedPlayer.name,
+          betType: selectedBetType.split(":")[0], // Extract bet type (e.g., "50+")
+          amount,
+          odds: parseFloat(selectedBetType.split(":")[1]) // Extract odds from betType string
+        })
+      });
+      
+      const data: BetResponse = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to place bet");
+      }
+      
+      // Update user balance in the store
+      if (data.newBalance !== undefined) {
+        updateUserBalance(data.newBalance);
+      }
+      
+      // Close the bet modal
+      closeModal();
+      
+      // Show success popup
+      setShowSuccessPopup(true);
+      
+      // Also show toast for background notification
+      toast.success(data.message);
+      
     } catch (error) {
       console.error("Bet Error:", error);
       toast.error("Bet Failed", {
@@ -170,7 +185,7 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, playe
                     onChange={(e) => setAmount(Number(e.target.value))}
                     className="w-full px-4 py-2 border border-gray-300 rounded-r-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg font-bold"
                     min={100}
-                    max={200000}
+                    max={user ? user.money : 200000}
                     disabled={isProcessing}
                   />
                 </div>
@@ -188,9 +203,9 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, playe
                   {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
                     <button
                       key={val}
-                      onClick={() => setAmount(amount + val)}
+                      onClick={() => setAmount(Math.min((user?.money || 0), amount + val))}
                       className="bg-green-100 text-green-800 py-2 rounded font-medium text-xs hover:bg-green-200 disabled:opacity-50"
-                      disabled={isProcessing}
+                      disabled={isProcessing || (amount + val) > (user?.money || 0)}
                     >
                       +{val >= 1000 ? `${val/1000}k` : val}
                     </button>
@@ -218,9 +233,51 @@ const PlayerRunsCard: React.FC<PlayerRunsCardProps> = ({ matchId, heading, playe
                 <button
                   onClick={handlePlaceBet}
                   className="bg-green-600 text-white w-2/3 py-3 rounded-lg hover:bg-green-700 font-semibold disabled:opacity-50"
-                  disabled={isProcessing}
+                  disabled={isProcessing || amount > (user?.money || 0)}
                 >
                   {isProcessing ? 'Processing...' : 'Place ₹' + amount.toLocaleString() + ' Bet'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Popup - Based on the PlayerWicketsCard implementation */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
+            <button
+              onClick={closeSuccessPopup}
+              className="absolute top-3 right-3 text-xl font-bold text-gray-700 hover:text-red-600 transition-colors"
+            >
+              ×
+            </button>
+            
+            <div className="text-center">
+              {/* Success Icon */}
+              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
+                <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+              </div>
+              
+              <h2 className="text-2xl font-bold mb-2 text-gray-800">Bet Placed Successfully!</h2>
+              <p className="text-gray-600 mb-6">Your runs bet has been placed successfully and can be viewed in your bet history.</p>
+              
+              <div className="flex gap-4">
+                <button
+                  onClick={navigateToBets}
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold transition-colors"
+                >
+                  See Bets
+                </button>
+                
+                <button
+                  onClick={closeSuccessPopup}
+                  className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 font-semibold transition-colors"
+                >
+                  Continue Betting
                 </button>
               </div>
             </div>
