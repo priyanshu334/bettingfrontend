@@ -12,6 +12,7 @@ import MatchCard from "@/components/MatchCard";
 import { MdLocationOn, MdCalendarToday } from "react-icons/md";
 import Image from "next/image";
 import Link from "next/link";
+import LiveScoreDisplay from "@/components/Scoredisplay";
 
 // ========================================================================
 // TYPE DEFINITIONS
@@ -428,7 +429,7 @@ export default function MatchDetails() {
             )}
          </CardContent>
       </Card>
-
+     <LiveScoreDisplay/>
       <div className="mb-8">
          <div className="flex flex-col sm:flex-row justify-center sm:space-x-8 md:space-x-20 mb-4">
            <h2 className="text-xl md:text-2xl font-semibold text-white text-center mb-2 sm:mb-0 hover:text-yellow-400 transition-colors">General Betting Options</h2>

@@ -372,7 +372,7 @@ const IPLStatsPage: React.FC = () => {
                         <p className="font-medium">₹{bet.amount.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-gray-500">Odds</p>
+                        <p className="text-gray-500">Runs</p>
                         <p className="font-medium">{bet.odds}</p>
                       </div>
                       <div>
