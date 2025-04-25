@@ -292,7 +292,7 @@ export default function UserBets() {
   return (
     <div className="max-w-4xl mx-auto p-4 md:p-6">
       {/* Header and Stats */}
-      <div className="mb-6 bg-gradient-to-r from-orange-600 to-orange-500 rounded-2xl p-5 shadow-lg text-white">
+      <div className="mb-6 bg-gradient-to-r from-orange-600 to-orange-500 rounded-2xl p-5 shadow-lg text-black">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold flex items-center gap-3">
@@ -311,19 +311,19 @@ export default function UserBets() {
         {!loading && settledBets.length > 0 && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-white bg-opacity-5 backdrop-blur-sm p-4 rounded-xl">
             <div className="text-center p-2 bg-white bg-opacity-10 rounded-lg">
-              <p className="text-xs text-orange-100">Win Rate</p>
+              <p className="text-xs text-black">Win Rate</p>
               <p className="text-xl font-bold">{stats.winRate}%</p>
             </div>
             <div className="text-center p-2 bg-white bg-opacity-10 rounded-lg">
-              <p className="text-xs text-orange-100">Total Won</p>
+              <p className="text-xs text-black">Total Won</p>
               <p className="text-xl font-bold text-green-400">{stats.totalWon}</p>
             </div>
             <div className="text-center p-2 bg-white bg-opacity-10 rounded-lg">
-              <p className="text-xs text-orange-100">Total Lost</p>
+              <p className="text-xs text-black">Total Lost</p>
               <p className="text-xl font-bold text-red-300">{stats.totalLost}</p>
             </div>
             <div className="text-center p-2 bg-white bg-opacity-10 rounded-lg">
-              <p className="text-xs text-orange-100">Net Profit</p>
+              <p className="text-xs text-black">Net Profit</p>
               <p className={`text-xl font-bold ${stats.profit >= 0 ? 'text-green-400' : 'text-red-300'}`}>
                 ₹{stats.profit.toLocaleString()}
               </p>
@@ -339,7 +339,7 @@ export default function UserBets() {
         </div>
       )}
       
-      <Tabs defaultValue="placed" className="w-full">
+      <Tabs defaultValue="placed" className="w-full text-black">
         <TabsList className="grid w-full grid-cols-2 mb-6 bg-orange-100 p-1 rounded-xl shadow-md">
           <TabsTrigger 
             value="placed" 
