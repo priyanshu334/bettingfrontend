@@ -175,7 +175,7 @@ export default function UserBets() {
     <Card key={bet._id} className="mb-4 overflow-hidden transition-all hover:shadow-xl border-b-4 border-orange-500 rounded-lg">
       <CardHeader className="bg-gradient-to-r from-orange-600 to-orange-400 pb-3 pt-4">
         <div className="flex justify-between items-center">
-          <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+          <CardTitle className="text-lg font-bold text-black flex items-center gap-2">
             <CricketBallIcon /> {bet.type}
           </CardTitle>
           {bet.status && (
@@ -187,7 +187,7 @@ export default function UserBets() {
         
         {bet.teamNames && (
           <div className="mt-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-2">
-            <div className="flex items-center justify-center text-white">
+            <div className="flex items-center justify-center text-black">
               <span className="font-bold">{bet.teamNames.team1}</span>
               <span className="mx-2 text-orange-100">vs</span>
               <span className="font-bold">{bet.teamNames.team2}</span>
@@ -263,7 +263,7 @@ export default function UserBets() {
       <div className="max-w-3xl mx-auto p-6">
         <div className="text-center bg-gradient-to-br from-orange-100 to-amber-50 rounded-2xl shadow-lg overflow-hidden">
           <div className="bg-gradient-to-r from-orange-600 to-orange-500 py-6 px-4">
-            <h1 className="text-3xl font-bold text-white flex items-center justify-center gap-2 mb-2">
+            <h1 className="text-3xl font-bold text-black flex items-center justify-center gap-2 mb-2">
               <Trophy className="h-8 w-8" /> IPL Betting Dashboard
             </h1>
             <p className="text-orange-100">Experience the thrill of IPL with real-time betting</p>
@@ -275,7 +275,7 @@ export default function UserBets() {
               <CricketBallIcon />
             </div>
             <p className="text-slate-700 font-medium mb-4">Please log in to view your bets and join the IPL action!</p>
-            <button className="bg-orange-500 text-white px-8 py-3 rounded-full hover:bg-orange-600 transition-colors shadow-lg font-medium flex items-center gap-2">
+            <button className="bg-orange-500 text-black px-8 py-3 rounded-full hover:bg-orange-600 transition-colors shadow-lg font-medium flex items-center gap-2">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
                 <polyline points="10 17 15 12 10 7" />
@@ -343,13 +343,13 @@ export default function UserBets() {
         <TabsList className="grid w-full grid-cols-2 mb-6 bg-orange-100 p-1 rounded-xl shadow-md">
           <TabsTrigger 
             value="placed" 
-            className="text-base data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-3"
+            className="text-base data-[state=active]:bg-orange-500 data-[state=active]:text-black data-[state=active]:shadow-md rounded-lg py-3"
           >
             Active Bets
           </TabsTrigger>
           <TabsTrigger 
             value="settled" 
-            className="text-base data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:shadow-md rounded-lg py-3"
+            className="text-base data-[state=active]:bg-orange-500 data-[state=active]:text-black data-[state=active]:shadow-md rounded-lg py-3"
           >
             Settled Bets
           </TabsTrigger>
@@ -368,7 +368,7 @@ export default function UserBets() {
                 </div>
                 <p className="text-xl text-orange-800 font-bold">No active bets found</p>
                 <p className="text-orange-600 mt-2 max-w-md mx-auto">Experience the excitement of IPL! Place your first bet to get started with the cricket action.</p>
-                <button className="mt-6 bg-orange-500 text-white px-8 py-3 rounded-full hover:bg-orange-600 transition-colors shadow-lg font-medium flex items-center gap-2 mx-auto">
+                <button className="mt-6 bg-orange-500 text-black px-8 py-3 rounded-full hover:bg-orange-600 transition-colors shadow-lg font-medium flex items-center gap-2 mx-auto">
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
