@@ -114,7 +114,7 @@ const Navbar: React.FC = () => {
                           Account Statement
                         </Link>
                         <Link 
-                          href="/betHistory" 
+                          href="/my-bets" 
                           className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                           onClick={() => setDropdownOpen(false)}
                         >
@@ -224,7 +224,7 @@ const Navbar: React.FC = () => {
                     Account Statement
                   </Link>
                   <Link 
-                    href="/betHistory" 
+                    href="/my-bets" 
                     className="block px-3 py-2 rounded-md text-base font-medium text-white hover:bg-white/10 transition-colors"
                     onClick={() => setMobileMenuOpen(false)}
                   >
