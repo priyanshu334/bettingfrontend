@@ -1,9 +1,10 @@
 "use client";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import Image from "next/image";
+import useScoreStore from "@/stores/useScoreStore";
 
 interface Team {
   id: number;
@@ -76,11 +77,22 @@ interface FixtureData {
 
 export default function LiveScorecard() {
   const { id } = useParams<{ id: string }>();
-  const [match, setMatch] = useState<FixtureData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const isFetching = useRef(false);
-  const [players, setPlayers] = useState<Record<number, Player>>({});
+  
+  // Use Zustand store
+  const { 
+    matches, 
+    players, 
+    loading, 
+    error, 
+    setMatch, 
+    setPlayers, 
+    setLoading, 
+    setError, 
+    setCurrentMatchId 
+  } = useScoreStore();
+  
+  const match = id && matches[id] ? matches[id] : null;
 
   const formatDate = (dateString: string) => {
     try {
@@ -167,12 +179,14 @@ export default function LiveScorecard() {
         player_name: playersMap[bowler.player_id]?.name || bowler.player_name || `Player ${bowler.player_id}`
       }));
 
-      setMatch(processedData);
+      // Save match to Zustand store
+      setMatch(id, processedData);
+      // Set current match ID
+      setCurrentMatchId(id);
 
     } catch (err) {
       console.error("Fetch error:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch match data");
-      if (isInitialLoad) setMatch(null);
     } finally {
       if (isInitialLoad) setLoading(false);
       isFetching.current = false;
@@ -186,19 +200,21 @@ export default function LiveScorecard() {
       return;
     }
 
-    fetchMatchData(true);
+    // If the match isn't in the store yet, or if we need a fresh fetch
+    if (!matches[id]) {
+      fetchMatchData(true);
+    } else {
+      setCurrentMatchId(id);
+    }
 
     const intervalId = setInterval(() => {
-      setMatch(currentMatch => {
-        if (currentMatch && currentMatch.status !== "Finished") {
-          fetchMatchData(false);
-        }
-        return currentMatch;
-      });
+      if (id && (!matches[id] || matches[id].status !== "Finished")) {
+        fetchMatchData(false);
+      }
     }, 30000);
 
     return () => clearInterval(intervalId);
-  }, [id]);
+  }, [id, matches]);
 
   const getPlayerName = (playerId: number, defaultName?: string) => {
     return players[playerId]?.name || defaultName || `Player ${playerId}`;
