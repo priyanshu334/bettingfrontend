@@ -12,9 +12,10 @@ import MatchCard from "@/components/MatchCard";
 import { MdLocationOn, MdCalendarToday } from "react-icons/md";
 import Image from "next/image";
 import Link from "next/link";
-import LiveScoreDisplay from "@/components/Scoredisplay";
 
-
+// ========================================================================
+// TYPE DEFINITIONS
+// ========================================================================
 
 interface Team {
   id: number;
@@ -427,7 +428,6 @@ export default function MatchDetails() {
             )}
          </CardContent>
       </Card>
-      <LiveScoreDisplay/>
 
       <div className="mb-8">
          <div className="flex flex-col sm:flex-row justify-center sm:space-x-8 md:space-x-20 mb-4">

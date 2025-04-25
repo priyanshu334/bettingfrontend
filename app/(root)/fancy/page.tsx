@@ -1,7 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { useAuthStore } from "@/stores/authStore"; // Adjust path as needed
-import { toast } from "sonner"; // Import toast for notifications
+import { useAuthStore } from "@/stores/authStore"; // Import the auth store
 
 // Define types for the stat items and bet data
 interface Stat {
@@ -13,16 +12,14 @@ interface Stat {
 
 interface Bet {
   id?: string;
-  _id?: string;
   userId: string;
   amount: number;
   betTitle: string;
   selectedTeam: 'pink' | 'blue';
   odds: number | string;
   won: boolean;
-  creditedTo: 'admin' | 'member';
+  creditedTo?: 'admin' | 'member';
   timestamp?: string;
-  createdAt?: string;
 }
 
 const statsData: Stat[] = [
@@ -49,13 +46,6 @@ const statsData: Stat[] = [
   { title: "Total Runout's in IPL", pink: 84, blue: 90, total: "" },
 ];
 
-interface BetResponse {
-  message: string;
-  newBalance?: number;
-  error?: string;
-  bet?: Bet;
-}
-
 const IPLStatsPage: React.FC = () => {
   const [showDialog, setShowDialog] = useState<boolean>(false);
   const [selectedBet, setSelectedBet] = useState<Stat | null>(null);
@@ -67,76 +57,70 @@ const IPLStatsPage: React.FC = () => {
   const [showBetsSidebar, setShowBetsSidebar] = useState<boolean>(true);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   
-  // Get auth data from store
-  const { user, token, updateUserBalance, isAuthenticated } = useAuthStore();
+  // Get auth state from store
+  const { user, token, isAuthenticated, updateUserBalance } = useAuthStore();
 
   // Fetch user bets on component mount
   useEffect(() => {
-    if (!isAuthenticated || !token || !user) return;
-    
-    const fetchUserBets = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bet/user/${user._id}`, {
-          headers: {
-            Authorization: `Bearer ${token}`
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setUserBets(data);
-        } else {
-          toast.error("Failed to fetch your bets");
-          console.error("Failed to fetch user bets");
-        }
-      } catch (err) {
-        console.error("Error fetching user bets:", err);
-        toast.error("Error loading bets");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (isAuthenticated && user) {
+      fetchUserBets();
+    }
+  }, [isAuthenticated, user]);
 
-    fetchUserBets();
-  }, [token, user, isAuthenticated]);
+  const fetchUserBets = async () => {
+    if (!isAuthenticated || !user) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bet/user/${user._id}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUserBets(data.bets || []);
+      } else {
+        console.error("Failed to fetch bets:", await response.text());
+      }
+    } catch (err) {
+      console.error("Error fetching user bets:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handlePlaceBet = async (): Promise<void> => {
-    if (!isAuthenticated || !user || !token) {
-      toast.error("Please login to place bets");
-      setError("Please login to place bets");
+    if (!isAuthenticated) {
+      setError("Please login first to place bets");
       setTimeout(() => setError(null), 3000);
       return;
     }
-    
+
+    if (!user) {
+      setError("User information not available");
+      setTimeout(() => setError(null), 3000);
+      return;
+    }
+
     if (selectedBet && amount > 0) {
-      // Validate bet amount
-      if (amount < 100 || amount > 200000) {
-        setError("Bet amount must be between 100 and 2L");
-        toast.error("Bet amount must be between 100 and 2L");
-        setTimeout(() => setError(null), 3000);
-        return;
-      }
-      
       // Check if user has enough balance
       if (user.money < amount) {
-        setError("Insufficient balance");
-        toast.error("Insufficient balance");
+        setError("Insufficient balance to place this bet");
         setTimeout(() => setError(null), 3000);
         return;
       }
-      
+
+      setIsLoading(true);
       try {
-        setIsLoading(true);
-        
         const betData: Bet = {
           userId: user._id,
           amount,
           betTitle: selectedBet.title,
           selectedTeam,
           odds: selectedTeam === 'pink' ? selectedBet.pink : selectedBet.blue,
-          won: false,
-          creditedTo: "admin"
+          won: false
         };
 
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bet/place`, {
@@ -148,33 +132,25 @@ const IPLStatsPage: React.FC = () => {
           body: JSON.stringify(betData),
         });
 
-        const responseData: BetResponse = await response.json();
-        
         if (!response.ok) {
-          throw new Error(responseData.error || 'Failed to place bet');
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to place bet');
         }
 
-        // Update user balance in state using newBalance from response if available
-        if (responseData.newBalance !== undefined && updateUserBalance) {
-          updateUserBalance(responseData.newBalance);
-        } else if (user && updateUserBalance) {
-          // Fallback to calculated balance
-          updateUserBalance(user.money - amount);
-        }
+        const responseData = await response.json();
         
-      // Add new bet to user bets list
-if (responseData.bet) {
-    setUserBets(prev => [...prev, responseData.bet as Bet]);
-  }
+        // Update local state
+        setUserBets(prev => [responseData.bet, ...prev]);
+        
+        // Update user balance in global state
+        updateUserBalance(user.money - amount);
         
         resetBetState();
         setShowConfirmation(true);
-        toast.success(responseData.message || "Bet placed successfully!");
         setTimeout(() => setShowConfirmation(false), 3000);
       } catch (err) {
         console.error("Error placing bet:", err);
         setError(err instanceof Error ? err.message : 'Failed to place bet');
-        toast.error(err instanceof Error ? err.message : 'Failed to place bet');
         setTimeout(() => setError(null), 3000);
       } finally {
         setIsLoading(false);
@@ -183,9 +159,8 @@ if (responseData.bet) {
   };
 
   const openBetDialog = (item: Stat, team: 'pink' | 'blue') => {
-    if (!isAuthenticated || !user || !token) {
-      setError("Please login to place bets");
-      toast.error("Please login to place bets");
+    if (!isAuthenticated) {
+      setError("Please login first to place bets");
       setTimeout(() => setError(null), 3000);
       return;
     }
@@ -207,25 +182,6 @@ if (responseData.bet) {
     const odds = typeof bet.odds === 'string' ? parseFloat(bet.odds) : bet.odds;
     return bet.amount * odds;
   };
-  
-  const formatDateTime = (dateString?: string): string => {
-    if (!dateString) return '';
-    
-    const date = new Date(dateString);
-    return date.toLocaleString();
-  };
-
-  // Show full-featured success popup like in PlayerWicketsCard
-  const [showSuccessPopup, setShowSuccessPopup] = useState<boolean>(false);
-
-  const closeSuccessPopup = () => {
-    setShowSuccessPopup(false);
-  };
-
-  const navigateToBets = () => {
-    window.location.href = '/my-bets'; // Simple navigation
-    closeSuccessPopup();
-  };
 
   return (
     <div className="flex p-4 bg-gray-100 min-h-screen">
@@ -233,10 +189,11 @@ if (responseData.bet) {
       <div className={`${showBetsSidebar ? 'w-3/4' : 'w-full'} transition-all duration-300`}>
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-2xl font-bold">IPL Match Stats</h1>
-          <div className="flex items-center gap-4">
-            {user && (
-              <div className="bg-white px-4 py-2 rounded-md shadow">
-                <span className="font-medium">Balance:</span> ₹{user.money.toLocaleString()}
+          <div className="flex gap-2 items-center">
+            {isAuthenticated && user && (
+              <div className="bg-green-50 border border-green-200 px-4 py-2 rounded-md">
+                <span className="text-gray-600">Balance: </span>
+                <span className="font-semibold">₹{user.money.toLocaleString()}</span>
               </div>
             )}
             <button 
@@ -258,14 +215,14 @@ if (responseData.bet) {
                 {item.title}
               </div>
               <div
-                className="col-span-1 p-3 bg-pink-100 font-semibold cursor-pointer hover:bg-pink-200 transition-colors"
+                className="col-span-1 p-3 bg-pink-100 font-semibold cursor-pointer"
                 onClick={() => openBetDialog(item, 'pink')}
               >
                 <div className="text-base">{item.pink}</div>
                 <div className="text-xs text-gray-600">100</div>
               </div>
               <div
-                className="col-span-1 p-3 bg-blue-100 font-semibold cursor-pointer hover:bg-blue-200 transition-colors"
+                className="col-span-1 p-3 bg-blue-100 font-semibold cursor-pointer"
                 onClick={() => openBetDialog(item, 'blue')}
               >
                 <div className="text-base">{item.blue}</div>
@@ -283,7 +240,6 @@ if (responseData.bet) {
               <button
                 onClick={resetBetState}
                 className="absolute top-2 right-3 text-white bg-red-500 rounded-full px-2 text-sm"
-                disabled={isLoading}
               >
                 ✕
               </button>
@@ -291,17 +247,17 @@ if (responseData.bet) {
               <h2 className="text-xl font-semibold text-orange-900">Place Bet</h2>
               <p className="text-sm font-medium text-black">{selectedBet.title}</p>
               
+              {user && (
+                <div className="text-sm text-gray-700">
+                  Available Balance: ₹{user.money.toLocaleString()}
+                </div>
+              )}
+              
               <div className={`p-2 rounded-md ${selectedTeam === 'pink' ? 'bg-pink-100' : 'bg-blue-100'}`}>
                 <p className="font-bold">
                   {selectedTeam === 'pink' ? 'Pink' : 'Blue'}: {selectedTeam === 'pink' ? selectedBet.pink : selectedBet.blue}
                 </p>
               </div>
-
-              {user && (
-                <div className="text-sm bg-white p-2 rounded-md">
-                  <span className="font-medium">Your Balance:</span> ₹{user.money.toLocaleString()}
-                </div>
-              )}
 
               <div>
                 <input
@@ -311,8 +267,7 @@ if (responseData.bet) {
                   className="p-2 rounded-md bg-white w-full"
                   placeholder="Amount"
                   min="100"
-                  max={user?.money || 200000}
-                  disabled={isLoading}
+                  max={user ? user.money : 200000}
                 />
               </div>
 
@@ -320,16 +275,16 @@ if (responseData.bet) {
                 {[1000, 2000, 5000, 10000, 20000, 25000, 50000, 75000, 90000, 95000].map((val) => (
                   <button
                     key={val}
-                    onClick={() => setAmount(Math.min((user?.money || 0), amount + val))}
-                    className="bg-orange-400 hover:bg-orange-500 text-white py-1 rounded text-sm disabled:opacity-50"
-                    disabled={isLoading || (amount + val) > (user?.money || 0)}
+                    onClick={() => setAmount(prev => Math.min(prev + val, user ? user.money : Infinity))}
+                    disabled={!user || user.money < val}
+                    className={`${!user || user.money < val ? 'bg-gray-300 cursor-not-allowed' : 'bg-orange-400 hover:bg-orange-500'} text-white py-1 rounded text-sm`}
                   >
                     +{val / 1000}k
                   </button>
                 ))}
               </div>
 
-              <p className="text-xs text-gray-700">Range: 100 to 2L</p>
+              <p className="text-xs text-gray-700">Range: 100 to 2L (Max: {user ? `₹${user.money.toLocaleString()}` : 'Login required'})</p>
 
               {error && (
                 <div className="text-red-600 text-sm text-center">
@@ -341,15 +296,14 @@ if (responseData.bet) {
                 <button
                   onClick={() => setAmount(0)}
                   className="text-blue-700 underline text-sm"
-                  disabled={isLoading}
                 >
                   Clear
                 </button>
                 <button
                   onClick={handlePlaceBet}
-                  disabled={amount <= 0 || isLoading || amount > (user?.money || 0)}
+                  disabled={amount <= 0 || isLoading || (user && amount > user.money)}
                   className={`px-4 py-2 rounded ${
-                    amount > 0 && !isLoading && amount <= (user?.money || 0)
+                    amount > 0 && !isLoading && (!user || amount <= user.money) 
                       ? 'bg-green-600 hover:bg-green-700 text-white' 
                       : 'bg-gray-400 cursor-not-allowed text-gray-200'
                   }`}
@@ -361,52 +315,10 @@ if (responseData.bet) {
           </div>
         )}
 
-        {/* Simple Confirmation Popup */}
+        {/* Confirmation Popup */}
         {showConfirmation && (
           <div className="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-xl shadow-lg z-50 transition-all duration-300">
             🎉 Bet placed successfully!
-          </div>
-        )}
-
-        {/* Success Popup - Enhanced Version */}
-        {showSuccessPopup && (
-          <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 relative">
-              <button
-                onClick={closeSuccessPopup}
-                className="absolute top-3 right-3 text-xl font-bold text-gray-700 hover:text-red-600 transition-colors"
-              >
-                ×
-              </button>
-              
-              <div className="text-center">
-                {/* Success Icon */}
-                <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
-                  <svg className="h-10 w-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                </div>
-                
-                <h2 className="text-2xl font-bold mb-2 text-gray-800">Bet Placed Successfully!</h2>
-                <p className="text-gray-600 mb-6">Your bet has been placed successfully and can be viewed in your bet history.</p>
-                
-                <div className="flex gap-4">
-                  <button
-                    onClick={navigateToBets}
-                    className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold transition-colors"
-                  >
-                    See Bets
-                  </button>
-                  
-                  <button
-                    onClick={closeSuccessPopup}
-                    className="flex-1 bg-gray-200 text-gray-800 py-3 rounded-lg hover:bg-gray-300 font-semibold transition-colors"
-                  >
-                    Continue Betting
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         )}
 
@@ -424,13 +336,13 @@ if (responseData.bet) {
           <div className="bg-white shadow rounded-xl p-4 sticky top-4 h-[calc(100vh-2rem)] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4 text-center">Your Bets</h2>
             
-            {isLoading ? (
-              <div className="text-center text-gray-500 py-8">
-                Loading your bets...
-              </div>
-            ) : !isAuthenticated ? (
+            {!isAuthenticated ? (
               <div className="text-center text-gray-500 py-8">
                 Please login to view your bets
+              </div>
+            ) : isLoading ? (
+              <div className="text-center text-gray-500 py-8">
+                Loading bets...
               </div>
             ) : userBets.length === 0 ? (
               <div className="text-center text-gray-500 py-8">
@@ -440,7 +352,7 @@ if (responseData.bet) {
               <div className="space-y-3">
                 {userBets.map((bet, index) => (
                   <div 
-                    key={bet._id || bet.id || index} 
+                    key={bet.id || index} 
                     className={`p-3 rounded-lg border ${bet.selectedTeam === 'pink' ? 'bg-pink-50 border-pink-200' : 'bg-blue-50 border-blue-200'}`}
                   >
                     <div className="flex justify-between items-start">
@@ -468,9 +380,9 @@ if (responseData.bet) {
                         <p className="font-medium">₹{calculatePotentialWin(bet).toLocaleString()}</p>
                       </div>
                     </div>
-                    {(bet.timestamp || bet.createdAt) && (
+                    {bet.timestamp && (
                       <p className="text-xs text-gray-500 mt-2">
-                        {formatDateTime(bet.timestamp || bet.createdAt)}
+                        {new Date(bet.timestamp).toLocaleString()}
                       </p>
                     )}
                   </div>
@@ -478,7 +390,7 @@ if (responseData.bet) {
               </div>
             )}
 
-            {user && userBets.length > 0 && (
+            {isAuthenticated && userBets.length > 0 && (
               <div className="mt-4 p-3 bg-gray-100 rounded-lg">
                 <div className="flex justify-between font-medium">
                   <span>Total Bets:</span>
