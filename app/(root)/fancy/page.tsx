@@ -215,10 +215,10 @@ const IPLStatsPage: React.FC = () => {
           {isAuthenticated && user && (
             <div className="flex items-center bg-white bg-opacity-20 backdrop-blur-sm px-4 py-2 rounded-lg shadow">
               <div className="mr-2">
-                <span className="text-white text-sm">Balance</span>
-                <div className="font-bold text-xl">₹{user.money.toLocaleString()}</div>
+                <span className="text-black text-sm">Balance</span>
+                <div className="font-bold text-black text-xl">₹{user.money.toLocaleString()}</div>
               </div>
-              <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+              <div className="w-8 h-8 bg-orange-100 text-black rounded-full flex items-center justify-center">
                 <span className="text-orange-600 font-bold">₹</span>
               </div>
             </div>
