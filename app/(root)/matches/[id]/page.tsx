@@ -1,5 +1,4 @@
 "use client";
-
 import { useParams } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,17 +68,6 @@ interface Match {
   visitorTeamLogo: string;
   score?: string;
   lineup?: Player[];
-  toss?: {
-    winner_id: number;
-    decision: number; // 1 = bat, 2 = bowl
-  };
-  innings?: {
-    id: number;
-    team_id: number;
-    overs: number;
-    runs: number;
-    wickets: number;
-  }[];
 }
 
 interface PlayerRunsDisplayData {
@@ -115,8 +103,6 @@ interface RunsOptionsOption {
   label: string;
   noOdds: number;
   yesOdds: number;
-  marketType: string;
-  disabled?: boolean;
 }
 
 const battingRoles = ['Batsman', 'Wicketkeeper', 'Allrounder', 'Batting Allrounder'];
@@ -143,13 +129,6 @@ export default function MatchDetails() {
   const [localPlayers, setLocalPlayers] = useState<Player[]>([]);
   const [visitorPlayers, setVisitorPlayers] = useState<Player[]>([]);
   const [oddsUpdateCount, setOddsUpdateCount] = useState(0);
-  const [matchProgress, setMatchProgress] = useState({
-    tossCompleted: false,
-    localTeamBatting: false,
-    visitorTeamBatting: false,
-    localInningsOvers: 0,
-    visitorInningsOvers: 0
-  });
 
   const generateRandomOdds = useCallback(() => {
     return (Math.random() * 2 + 1).toFixed(2);
@@ -168,106 +147,91 @@ export default function MatchDetails() {
     return () => clearInterval(interval);
   }, [updateAllOdds]);
 
-  const determineMatchProgress = useCallback((matchData: Match) => {
-    const progress = {
-      tossCompleted: false,
-      localTeamBatting: false,
-      visitorTeamBatting: false,
-      localInningsOvers: 0,
-      visitorInningsOvers: 0
+  useEffect(() => {
+    const fetchMatch = async () => {
+      if (!id) {
+        setError("Match ID is missing.");
+        setLoading(false);
+        return;
+      }
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch(`/api/fixtures/${id}`);
+        if (!res.ok) {
+          if (res.status === 404) throw new Error(`Match with ID ${id} not found.`);
+          throw new Error(`Failed to fetch match data (status ${res.status})`);
+        }
+        const data = await res.json();
+        if (!data || !data.data) throw new Error("Invalid API response structure.");
+
+        const fixture = data.data;
+        const localTeam: Team = fixture.localteam || { id: 0, name: 'TBD', image_path: '/team-placeholder.png' };
+        const visitorTeam: Team = fixture.visitorteam || { id: 0, name: 'TBD', image_path: '/team-placeholder.png' };
+        const venueName = fixture.venue?.name || "Venue TBD";
+
+        let formattedDate = "Date TBD";
+        if (fixture.starting_at) {
+          try {
+             const startingAt = new Date(fixture.starting_at);
+             const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata', hour12: true };
+             formattedDate = startingAt.toLocaleString("en-IN", options);
+          } catch (dateError) {
+             console.error("Error formatting date:", dateError);
+             formattedDate = fixture.starting_at;
+          }
+        }
+
+        const rawLineup: RawApiPlayer[] = fixture.lineup || [];
+        const processedLineup: Player[] = rawLineup
+            .map((playerData: RawApiPlayer): Player | null => {
+                if (!playerData || !playerData.lineup || !playerData.id || playerData.lineup.substitution === true) {
+                    return null;
+                }
+                return {
+                    id: playerData.id,
+                    team_id: playerData.lineup.team_id,
+                    fullname: playerData.fullname || `${playerData.firstname || ''} ${playerData.lastname || ''}`.trim(),
+                    firstname: playerData.firstname || '',
+                    lastname: playerData.lastname || '',
+                    position: playerData.position?.name || 'Unknown',
+                };
+            })
+            .filter((player): player is Player => player !== null && player.team_id !== undefined);
+
+        const matchData: Match = {
+            id: fixture.id,
+            match: `${localTeam.name} vs. ${visitorTeam.name}`,
+            date: formattedDate,
+            venue: venueName,
+            localTeam: localTeam,
+            visitorTeam: visitorTeam,
+            localTeamLogo: localTeam.image_path || '/team-placeholder.png',
+            visitorTeamLogo: visitorTeam.image_path || '/team-placeholder.png',
+            score: fixture.status === 'Finished' ? `Score: ${fixture.scoreboards?.find((s: any) => s.type === 'total')?.score || 'N/A'}` : (fixture.status || "Match not started"),
+            lineup: processedLineup
+        };
+        setMatch(matchData);
+
+        const localTeamId = localTeam.id;
+        const visitorTeamId = visitorTeam.id;
+
+        const localTeamPlayers = processedLineup.filter(p => p.team_id === localTeamId);
+        const visitorTeamPlayers = processedLineup.filter(p => p.team_id === visitorTeamId);
+
+        setLocalPlayers(localTeamPlayers);
+        setVisitorPlayers(visitorTeamPlayers);
+
+      } catch (err) {
+          console.error("Error fetching match details:", err);
+          setError(err instanceof Error ? err.message : "An unknown error occurred while fetching match data.");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    if (matchData.toss) {
-      progress.tossCompleted = true;
-      
-      const battingFirstId = matchData.toss.decision === 1 ? matchData.toss.winner_id : 
-        (matchData.toss.winner_id === matchData.localTeam.id ? matchData.visitorTeam.id : matchData.localTeam.id);
-      
-      progress.localTeamBatting = battingFirstId === matchData.localTeam.id;
-      progress.visitorTeamBatting = battingFirstId === matchData.visitorTeam.id;
-    }
-
-    if (matchData.innings) {
-      matchData.innings.forEach(inning => {
-        if (inning.team_id === matchData.localTeam.id) {
-          progress.localInningsOvers = inning.overs || 0;
-        } else {
-          progress.visitorInningsOvers = inning.overs || 0;
-        }
-      });
-    }
-
-    return progress;
-  }, []);
-
-  useEffect(() => {
-    if (match) {
-      setMatchProgress(determineMatchProgress(match));
-    }
-  }, [match, determineMatchProgress]);
-
-  const shouldDisableSection = (team: 'local' | 'visitor', overThreshold: number) => {
-    if (!matchProgress.tossCompleted) return false;
-    
-    if (team === 'local') {
-      if (matchProgress.localTeamBatting) {
-        return matchProgress.localInningsOvers >= overThreshold;
-      }
-    } else {
-      if (matchProgress.visitorTeamBatting) {
-        return matchProgress.visitorInningsOvers >= overThreshold;
-      }
-    }
-    
-    return false;
-  };
-
-  const generateRunsOptions = useCallback((match: Match) => {
-    const options = [
-      { id: 1, label: `1 Over (${match.localTeam.name})`, noOdds: rand(5, 15), yesOdds: rand(5, 15), marketType: "runs", 
-        disabled: shouldDisableSection('local', 1) },
-      { id: 2, label: `6 Overs (${match.localTeam.name})`, noOdds: rand(40, 55), yesOdds: rand(40, 55), marketType: "runs", 
-        disabled: shouldDisableSection('local', 6) },
-      { id: 3, label: `10 Overs (${match.localTeam.name})`, noOdds: rand(70, 90), yesOdds: rand(70, 90), marketType: "runs", 
-        disabled: shouldDisableSection('local', 10) },
-      { id: 4, label: `15 Overs (${match.localTeam.name})`, noOdds: rand(100, 125), yesOdds: rand(100, 125), marketType: "runs", 
-        disabled: shouldDisableSection('local', 15) },
-      { id: 5, label: `20 Overs (${match.localTeam.name})`, noOdds: rand(150, 180), yesOdds: rand(150, 180), marketType: "runs", 
-        disabled: shouldDisableSection('local', 20) },
-      { id: 6, label: `1 Over (${match.visitorTeam.name})`, noOdds: rand(5, 15), yesOdds: rand(5, 15), marketType: "runs", 
-        disabled: shouldDisableSection('visitor', 1) },
-      { id: 7, label: `6 Overs (${match.visitorTeam.name})`, noOdds: rand(40, 55), yesOdds: rand(40, 55), marketType: "runs", 
-        disabled: shouldDisableSection('visitor', 6) },
-      { id: 8, label: `10 Overs (${match.visitorTeam.name})`, noOdds: rand(70, 90), yesOdds: rand(70, 90), marketType: "runs", 
-        disabled: shouldDisableSection('visitor', 10) },
-      { id: 9, label: `15 Overs (${match.visitorTeam.name})`, noOdds: rand(100, 125), yesOdds: rand(100, 125), marketType: "runs", 
-        disabled: shouldDisableSection('visitor', 15) },
-      { id: 10, label: `20 Overs (${match.visitorTeam.name})`, noOdds: rand(150, 180), yesOdds: rand(150, 180), marketType: "runs", 
-        disabled: shouldDisableSection('visitor', 20) },
-      { id: 11, label: `Total Match Runs (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(300, 360), yesOdds: rand(300, 360), marketType: "totals" },
-      { id: 12, label: `Total Match 4s (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(20, 35), yesOdds: rand(20, 35), marketType: "totals" },
-      { id: 13, label: `Total Match 6s (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(10, 25), yesOdds: rand(10, 25), marketType: "totals" },
-      { id: 14, label: `6 Over Wickets (${match.localTeam.name})`, noOdds: rand(1, 3), yesOdds: rand(1, 3), marketType: "wickets", 
-        disabled: shouldDisableSection('local', 6) },
-      { id: 15, label: `10 Over Wickets (${match.localTeam.name})`, noOdds: rand(2, 4), yesOdds: rand(2, 4), marketType: "wickets", 
-        disabled: shouldDisableSection('local', 10) },
-      { id: 16, label: `15 Over Wickets (${match.localTeam.name})`, noOdds: rand(3, 5), yesOdds: rand(3, 5), marketType: "wickets", 
-        disabled: shouldDisableSection('local', 15) },
-      { id: 17, label: `20 Over Wickets (${match.localTeam.name})`, noOdds: rand(4, 7), yesOdds: rand(4, 7), marketType: "wickets", 
-        disabled: shouldDisableSection('local', 20) },
-      { id: 18, label: `6 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(1, 3), yesOdds: rand(1, 3), marketType: "wickets", 
-        disabled: shouldDisableSection('visitor', 6) },
-      { id: 19, label: `10 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(2, 4), yesOdds: rand(2, 4), marketType: "wickets", 
-        disabled: shouldDisableSection('visitor', 10) },
-      { id: 20, label: `15 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(3, 5), yesOdds: rand(3, 5), marketType: "wickets", 
-        disabled: shouldDisableSection('visitor', 15) },
-      { id: 21, label: `20 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(4, 7), yesOdds: rand(4, 7), marketType: "wickets", 
-        disabled: shouldDisableSection('visitor', 20) },
-      { id: 22, label: `Total Match Wickets (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(9, 14), yesOdds: rand(9, 14), marketType: "totals" }
-    ];
-
-    return options.filter(option => !option.disabled);
-  }, [shouldDisableSection]);
+    fetchMatch();
+  }, [id]);
 
   const filterPlayersByRole = useCallback((team: "local" | "visitor", roleFilter: string[]): Player[] => {
     const teamPlayers = team === "local" ? localPlayers : visitorPlayers;
@@ -279,17 +243,17 @@ export default function MatchDetails() {
 
   const generateMatchCardData = useCallback(() => {
     if (!match) return null;
-
+  
     const localTeamId = match.localTeam.id?.toString() || 'local-id';
     const visitorTeamId = match.visitorTeam.id?.toString() || 'visitor-id';
     const localTeamName = match.localTeam.name || 'Local Team';
     const visitorTeamName = match.visitorTeam.name || 'Visitor Team';
     const localTeamShort = localTeamName.length > 15 ? `${localTeamName.substring(0, 12)}...` : localTeamName;
     const visitorTeamShort = visitorTeamName.length > 15 ? `${visitorTeamName.substring(0, 12)}...` : visitorTeamName;
-
+  
     return {
       matchId: match.id,
-      userId: "current-user-id",
+      userId: "current-user-id", // Replace this with actual user ID
       matchOdds: [
         { teamId: localTeamId, team: localTeamName, back: generateRandomOdds(), lay: (parseFloat(generateRandomOdds()) + 0.01).toFixed(2), stake: "100" },
         { teamId: visitorTeamId, team: visitorTeamName, back: generateRandomOdds(), lay: (parseFloat(generateRandomOdds()) + 0.01).toFixed(2), stake: "100" }
@@ -306,134 +270,26 @@ export default function MatchDetails() {
         { teamId: localTeamId, team: localTeamName, odds: generateRandomOdds() },
         { teamId: visitorTeamId, team: visitorTeamName, odds: generateRandomOdds() }
       ]
+      
     };
   }, [match, generateRandomOdds]);
-
-  useEffect(() => {
-    const fetchMatch = async () => {
-      if (!id) {
-        setError("Match ID is missing.");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError(null);
-        const res = await fetch(`/api/fixtures/${id}`);
-        
-        if (!res.ok) {
-          if (res.status === 404) throw new Error(`Match with ID ${id} not found.`);
-          throw new Error(`Failed to fetch match data (status ${res.status})`);
-        }
-
-        const data = await res.json();
-        if (!data || !data.data) throw new Error("Invalid API response structure.");
-
-        const fixture = data.data;
-        const localTeam: Team = fixture.localteam || { id: 0, name: 'TBD', image_path: '/team-placeholder.png' };
-        const visitorTeam: Team = fixture.visitorteam || { id: 0, name: 'TBD', image_path: '/team-placeholder.png' };
-        const venueName = fixture.venue?.name || "Venue TBD";
-
-        let formattedDate = "Date TBD";
-        if (fixture.starting_at) {
-          try {
-            const startingAt = new Date(fixture.starting_at);
-            const options: Intl.DateTimeFormatOptions = { 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric', 
-              hour: '2-digit', 
-              minute: '2-digit', 
-              timeZone: 'Asia/Kolkata', 
-              hour12: true 
-            };
-            formattedDate = startingAt.toLocaleString("en-IN", options);
-          } catch (dateError) {
-            console.error("Error formatting date:", dateError);
-            formattedDate = fixture.starting_at;
-          }
-        }
-
-        const rawLineup: RawApiPlayer[] = fixture.lineup || [];
-        const processedLineup: Player[] = rawLineup
-          .map((playerData: RawApiPlayer): Player | null => {
-            if (!playerData || !playerData.lineup || !playerData.id || playerData.lineup.substitution === true) {
-              return null;
-            }
-            return {
-              id: playerData.id,
-              team_id: playerData.lineup.team_id,
-              fullname: playerData.fullname || `${playerData.firstname || ''} ${playerData.lastname || ''}`.trim(),
-              firstname: playerData.firstname || '',
-              lastname: playerData.lastname || '',
-              position: playerData.position?.name || 'Unknown',
-            };
-          })
-          .filter((player): player is Player => player !== null && player.team_id !== undefined);
-
-        const matchData: Match = {
-          id: fixture.id,
-          match: `${localTeam.name} vs. ${visitorTeam.name}`,
-          date: formattedDate,
-          venue: venueName,
-          localTeam: localTeam,
-          visitorTeam: visitorTeam,
-          localTeamLogo: localTeam.image_path || '/team-placeholder.png',
-          visitorTeamLogo: visitorTeam.image_path || '/team-placeholder.png',
-          score: fixture.status === 'Finished' ? `Score: ${fixture.scoreboards?.find((s: any) => s.type === 'total')?.score || 'N/A'}` : (fixture.status || "Match not started"),
-          lineup: processedLineup,
-          toss: fixture.toss ? {
-            winner_id: fixture.toss.winner_team_id,
-            decision: fixture.toss.decision
-          } : undefined,
-          innings: fixture.innings?.map((inning: any) => ({
-            id: inning.id,
-            team_id: inning.team_id,
-            overs: inning.overs,
-            runs: inning.runs,
-            wickets: inning.wickets
-          }))
-        };
-
-        setMatch(matchData);
-
-        const localTeamId = localTeam.id;
-        const visitorTeamId = visitorTeam.id;
-
-        const localTeamPlayers = processedLineup.filter(p => p.team_id === localTeamId);
-        const visitorTeamPlayers = processedLineup.filter(p => p.team_id === visitorTeamId);
-
-        setLocalPlayers(localTeamPlayers);
-        setVisitorPlayers(visitorTeamPlayers);
-
-      } catch (err) {
-        console.error("Error fetching match details:", err);
-        setError(err instanceof Error ? err.message : "An unknown error occurred while fetching match data.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchMatch();
-  }, [id]);
-
+  
   if (loading) {
     return <div className="flex justify-center items-center h-screen text-white bg-gray-900">Loading match details...</div>;
   }
 
   if (error || !match) {
-    return (
-      <div className="container mx-auto p-4 text-center text-red-500 bg-gray-900 min-h-screen">
-        <Card className="bg-gray-800 border-red-500 p-6 inline-block">
-          <CardHeader><CardTitle className="text-2xl mb-4 text-red-400">Error Loading Match</CardTitle></CardHeader>
-          <CardContent>
-            <p className="mb-4 text-gray-300">{error || "Match data could not be loaded."}</p>
-            <Link href="/matches" className="text-blue-400 hover:text-blue-300 underline">Return to matches list</Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
+      return (
+        <div className="container mx-auto p-4 text-center text-red-500 bg-gray-900 min-h-screen">
+          <Card className="bg-gray-800 border-red-500 p-6 inline-block">
+            <CardHeader><CardTitle className="text-2xl mb-4 text-red-400">Error Loading Match</CardTitle></CardHeader>
+            <CardContent>
+                <p className="mb-4 text-gray-300">{error || "Match data could not be loaded."}</p>
+                <Link href="/matches" className="text-blue-400 hover:text-blue-300 underline">Return to matches list</Link>
+            </CardContent>
+          </Card>
+        </div>
+      );
   }
 
   const localBattingPlayers = filterPlayersByRole("local", battingRoles);
@@ -501,96 +357,104 @@ export default function MatchDetails() {
     matchId: match.id,
     userId: "current-user-id",
     heading: "Innings Runs & Wickets",
-    options: generateRunsOptions(match)
+    options: [
+      { id: 1, label: `1 Over (${match.localTeam.name})`, noOdds: rand(5, 15), yesOdds: rand(5, 15), marketType: "runs" },
+      { id: 2, label: `6 Overs (${match.localTeam.name})`, noOdds: rand(40, 55), yesOdds: rand(40, 55), marketType: "runs" },
+      { id: 3, label: `10 Overs (${match.localTeam.name})`, noOdds: rand(70, 90), yesOdds: rand(70, 90), marketType: "runs" },
+      { id: 4, label: `15 Overs (${match.localTeam.name})`, noOdds: rand(100, 125), yesOdds: rand(100, 125), marketType: "runs" },
+      { id: 5, label: `20 Overs (${match.localTeam.name})`, noOdds: rand(150, 180), yesOdds: rand(150, 180), marketType: "runs" },
+      { id: 6, label: `1 Over (${match.visitorTeam.name})`, noOdds: rand(5, 15), yesOdds: rand(5, 15), marketType: "runs" },
+      { id: 7, label: `6 Overs (${match.visitorTeam.name})`, noOdds: rand(40, 55), yesOdds: rand(40, 55), marketType: "runs" },
+      { id: 8, label: `10 Overs (${match.visitorTeam.name})`, noOdds: rand(70, 90), yesOdds: rand(70, 90), marketType: "runs" },
+      { id: 9, label: `15 Overs (${match.visitorTeam.name})`, noOdds: rand(100, 125), yesOdds: rand(100, 125), marketType: "runs" },
+      { id: 10, label: `20 Overs (${match.visitorTeam.name})`, noOdds: rand(150, 180), yesOdds: rand(150, 180), marketType: "runs" },
+      { id: 11, label: `Total Match Runs (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(300, 360), yesOdds: rand(300, 360), marketType: "totals" },
+      { id: 12, label: `Total Match 4s (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(20, 35), yesOdds: rand(20, 35), marketType: "totals" },
+      { id: 13, label: `Total Match 6s (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(10, 25), yesOdds: rand(10, 25), marketType: "totals" },
+      { id: 14, label: `6 Over Wickets (${match.localTeam.name})`, noOdds: rand(1, 3), yesOdds: rand(1, 3), marketType: "wickets" },
+      { id: 15, label: `10 Over Wickets (${match.localTeam.name})`, noOdds: rand(2, 4), yesOdds: rand(2, 4), marketType: "wickets" },
+      { id: 16, label: `15 Over Wickets (${match.localTeam.name})`, noOdds: rand(3, 5), yesOdds: rand(3, 5), marketType: "wickets" },
+      { id: 17, label: `20 Over Wickets (${match.localTeam.name})`, noOdds: rand(4, 7), yesOdds: rand(4, 7), marketType: "wickets" },
+      { id: 18, label: `6 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(1, 3), yesOdds: rand(1, 3), marketType: "wickets" },
+      { id: 19, label: `10 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(2, 4), yesOdds: rand(2, 4), marketType: "wickets" },
+      { id: 20, label: `15 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(3, 5), yesOdds: rand(3, 5), marketType: "wickets" },
+      { id: 21, label: `20 Over Wickets (${match.visitorTeam.name})`, noOdds: rand(4, 7), yesOdds: rand(4, 7), marketType: "wickets" },
+      { id: 22, label: `Total Match Wickets (${match.localTeam.name} vs ${match.visitorTeam.name})`, noOdds: rand(9, 14), yesOdds: rand(9, 14), marketType: "totals" }
+    ]
   };
+  
 
   const matchCardData = generateMatchCardData();
 
   return (
     <div className="container mx-auto p-4 bg-gray-900 min-h-screen text-gray-200">
       <Card className="mb-8 bg-gray-800 border-gray-700 shadow-lg overflow-hidden">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-2xl md:text-3xl font-bold text-white text-center">{match.match}</CardTitle>
-          <div className="flex flex-col sm:flex-row justify-center items-center space-y-1 sm:space-y-0 sm:space-x-4 text-sm text-gray-400 mt-2">
-            <span className="flex items-center"><MdLocationOn className="mr-1 flex-shrink-0" /> {match.venue}</span>
-            <span className="flex items-center"><MdCalendarToday className="mr-1 flex-shrink-0" /> {match.date}</span>
-          </div>
-        </CardHeader>
-        <CardContent className="relative flex flex-col sm:flex-row justify-around items-center pt-4 pb-6 px-2">
-          <div className="flex flex-col items-center text-center mb-4 sm:mb-0 w-full sm:w-1/3">
-            {match.localTeamLogo && (
-              <Image
-                src={match.localTeamLogo}
-                alt={`${match.localTeam.name} logo`}
-                width={64} height={64}
-                className="rounded-full mb-2 border-2 border-gray-600 bg-gray-700"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/team-placeholder.png'; }}
-              />
+         <CardHeader className="pb-4">
+           <CardTitle className="text-2xl md:text-3xl font-bold text-white text-center">{match.match}</CardTitle>
+           <div className="flex flex-col sm:flex-row justify-center items-center space-y-1 sm:space-y-0 sm:space-x-4 text-sm text-gray-400 mt-2">
+             <span className="flex items-center"><MdLocationOn className="mr-1 flex-shrink-0" /> {match.venue}</span>
+             <span className="flex items-center"><MdCalendarToday className="mr-1 flex-shrink-0" /> {match.date}</span>
+           </div>
+         </CardHeader>
+         <CardContent className="relative flex flex-col sm:flex-row justify-around items-center pt-4 pb-6 px-2">
+           <div className="flex flex-col items-center text-center mb-4 sm:mb-0 w-full sm:w-1/3">
+             {match.localTeamLogo && (
+                <Image
+                  src={match.localTeamLogo}
+                  alt={`${match.localTeam.name} logo`}
+                  width={64} height={64}
+                  className="rounded-full mb-2 border-2 border-gray-600 bg-gray-700"
+                  onError={(e) => { (e.target as HTMLImageElement).src = '/team-placeholder.png'; }}
+                />
+             )}
+             <span className={`font-semibold text-base md:text-lg text-white px-3 py-1 rounded break-words ${teamColors[match.localTeam.name] || 'bg-gray-600'}`}>{match.localTeam.name}</span>
+           </div>
+           <div className="text-xl font-bold text-gray-400 mx-2 my-2 sm:my-0">VS</div>
+           <div className="flex flex-col items-center text-center w-full sm:w-1/3">
+             {match.visitorTeamLogo && (
+                <Image
+                  src={match.visitorTeamLogo}
+                  alt={`${match.visitorTeam.name} logo`}
+                  width={64} height={64}
+                  className="rounded-full mb-2 border-2 border-gray-600 bg-gray-700"
+                  onError={(e) => { (e.target as HTMLImageElement).src = '/team-placeholder.png'; }}
+                />
+             )}
+             <span className={`font-semibold text-base md:text-lg text-white px-3 py-1 rounded break-words ${teamColors[match.visitorTeam.name] || 'bg-gray-600'}`}>{match.visitorTeam.name}</span>
+           </div>
+           {match.score && (
+              <div className="w-full text-center mt-4 sm:mt-0 sm:absolute sm:top-2 sm:right-4">
+                <Badge variant="secondary" className="text-xs sm:text-sm bg-gray-700 text-gray-200 px-2 py-1">{match.score}</Badge>
+              </div>
             )}
-            <span className={`font-semibold text-base md:text-lg text-white px-3 py-1 rounded break-words ${teamColors[match.localTeam.name] || 'bg-gray-600'}`}>
-              {match.localTeam.name}
-            </span>
-          </div>
-          <div className="text-xl font-bold text-gray-400 mx-2 my-2 sm:my-0">VS</div>
-          <div className="flex flex-col items-center text-center w-full sm:w-1/3">
-            {match.visitorTeamLogo && (
-              <Image
-                src={match.visitorTeamLogo}
-                alt={`${match.visitorTeam.name} logo`}
-                width={64} height={64}
-                className="rounded-full mb-2 border-2 border-gray-600 bg-gray-700"
-                onError={(e) => { (e.target as HTMLImageElement).src = '/team-placeholder.png'; }}
-              />
-            )}
-            <span className={`font-semibold text-base md:text-lg text-white px-3 py-1 rounded break-words ${teamColors[match.visitorTeam.name] || 'bg-gray-600'}`}>
-              {match.visitorTeam.name}
-            </span>
-          </div>
-          {match.score && (
-            <div className="w-full text-center mt-4 sm:mt-0 sm:absolute sm:top-2 sm:right-4">
-              <Badge variant="secondary" className="text-xs sm:text-sm bg-gray-700 text-gray-200 px-2 py-1">
-                {match.score}
-              </Badge>
-            </div>
-          )}
-        </CardContent>
+         </CardContent>
       </Card>
-
-      <LiveScoreDisplay/>
-
+     <LiveScoreDisplay/>
       <div className="mb-8">
-        <div className="flex flex-col sm:flex-row justify-center sm:space-x-8 md:space-x-20 mb-4">
-          <h2 className="text-xl md:text-2xl font-semibold text-white text-center mb-2 sm:mb-0 hover:text-yellow-400 transition-colors">
-            General Betting Options
-          </h2>
-          <Link href="/fancy" className="text-center">
-            <h2 className="text-xl md:text-2xl font-semibold text-white hover:text-yellow-400 transition-colors">
-              Fancy Betting Options
-            </h2>
-          </Link>
-        </div>
-        <div className="flex items-center justify-center">
-          {matchCardData ? (
-            <MatchCard 
-              {...matchCardData} 
-              key={`match-card-${oddsUpdateCount}`} 
-         
-            />
-          ) : (
-            <p className="text-gray-500">Match betting data not available yet.</p>
-          )}
-        </div>
-      </div>
+         <div className="flex flex-col sm:flex-row justify-center sm:space-x-8 md:space-x-20 mb-4">
+           <h2 className="text-xl md:text-2xl font-semibold text-white text-center mb-2 sm:mb-0 hover:text-yellow-400 transition-colors">General Betting Options</h2>
+           <Link href="/fancy" className="text-center"><h2 className="text-xl md:text-2xl font-semibold text-white hover:text-yellow-400 transition-colors">Fancy Betting Options</h2></Link>
+         </div>
+         <div className="flex items-center justify-center">
+           {matchCardData ? (
+             <MatchCard {...matchCardData} key={`match-card-${oddsUpdateCount}`} />
+           ) : (
+             <p className="text-gray-500">Match betting data not available yet.</p>
+           )}
+         </div>
+       </div>
 
       <div className="mb-8">
         <h2 className="text-xl md:text-2xl font-semibold text-white mb-4">Match Runs & Wickets</h2>
         <RunsOptionsCard
-          key={`runs-wickets-${oddsUpdateCount}`}
-          matchId={match.id}
-          heading="Runs & Wickets"
-          options={runsAndWicketsData.options}
-          teamId={match.localTeam.id}
-        />
+  key="some-key"
+  matchId={match.id}
+
+  heading="Runs & Wickets"
+  options={runsAndWicketsData.options}
+  teamId={match.localTeam.id} // or match.visitorTeam.id
+/>
+
       </div>
 
       <div className="mb-8">
@@ -599,12 +463,14 @@ export default function MatchDetails() {
           <PlayerRunsCard
             key={`local-runs-${oddsUpdateCount}`}
             matchId={match.id}
+   
             heading={`${match.localTeam.name}`}
             players={playerRunsData}
           />
           <PlayerRunsCard
             key={`visitor-runs-${oddsUpdateCount}`}
             matchId={match.id}
+  
             heading={`${match.visitorTeam.name}`}
             players={visitorPlayerRunsData}
           />
@@ -617,12 +483,14 @@ export default function MatchDetails() {
           <PlayerWicketsCard
             key={`local-wickets-${oddsUpdateCount}`}
             matchId={match.id}
+      
             heading={`${match.localTeam.name}`}
             players={playerWicketsData}
           />
           <PlayerWicketsCard
             key={`visitor-wickets-${oddsUpdateCount}`}
             matchId={match.id}
+        
             heading={`${match.visitorTeam.name}`}
             players={visitorPlayerWicketsData}
           />
@@ -635,12 +503,14 @@ export default function MatchDetails() {
           <PlayerBoundariesCard
             key={`local-boundaries-${oddsUpdateCount}`}
             matchId={match.id}
+  
             heading={`${match.localTeam.name}`}
             players={playerBoundariesData}
           />
           <PlayerBoundariesCard
             key={`visitor-boundaries-${oddsUpdateCount}`}
             matchId={match.id}
+
             heading={`${match.visitorTeam.name}`}
             players={visitorPlayerBoundariesData}
           />
@@ -653,12 +523,14 @@ export default function MatchDetails() {
           <BowlerRunsCard
             key={`local-bowler-${oddsUpdateCount}`}
             matchId={match.id}
+
             heading={`${match.localTeam.name}`}
             players={bowlerRunsData}
           />
           <BowlerRunsCard
             key={`visitor-bowler-${oddsUpdateCount}`}
             matchId={match.id}
+    
             heading={`${match.visitorTeam.name}`}
             players={visitorBowlerRunsData}
           />
