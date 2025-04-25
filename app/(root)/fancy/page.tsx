@@ -72,7 +72,7 @@ const IPLStatsPage: React.FC = () => {
     
     setIsLoading(true);
     try {
-      const response = await fetch(`/api/bet/user/${user._id}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bet/user/${user._id}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -123,7 +123,7 @@ const IPLStatsPage: React.FC = () => {
           won: false
         };
 
-        const response = await fetch('/api/bet/place', {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bet/place`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
