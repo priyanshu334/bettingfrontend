@@ -13,28 +13,17 @@ export interface Team {
     position: string;
   }
   
-  export interface RawApiPlayer {
-    id: number;
-    country_id: number;
-    firstname: string;
-    lastname: string;
-    fullname: string;
-    image_path: string;
-    dateofbirth: string;
-    gender: string;
-    battingstyle: string | null;
-    bowlingstyle: string | null;
-    position?: {
-      id: number;
-      name: string;
+  export interface MatchStatus {
+    tossCompleted: boolean;
+    tossWinner?: Team;
+    battingFirst?: Team;
+    innings?: number;
+    currentInnings?: {
+      battingTeam: Team;
+      bowlingTeam: Team;
     };
-    updated_at: string;
-    lineup?: {
-      team_id: number;
-      captain: boolean;
-      wicketkeeper: boolean;
-      substitution: boolean;
-    };
+    matchStarted: boolean;
+    matchCompleted: boolean;
   }
   
   export interface Match {
@@ -48,6 +37,7 @@ export interface Team {
     visitorTeamLogo: string;
     score?: string;
     lineup?: Player[];
+    status: MatchStatus;
   }
   
   export interface PlayerRunsDisplayData {
