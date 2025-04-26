@@ -207,11 +207,12 @@ export default function LiveScorecard() {
       setCurrentMatchId(id);
     }
 
+    // Changed from 30000 to 60000 (1 minute) for the refresh interval
     const intervalId = setInterval(() => {
       if (id && (!matches[id] || matches[id].status !== "Finished")) {
         fetchMatchData(false);
       }
-    }, 30000);
+    }, 60000); // Update every 1 minute (60000ms) instead of 30 seconds
 
     return () => clearInterval(intervalId);
   }, [id, matches]);
