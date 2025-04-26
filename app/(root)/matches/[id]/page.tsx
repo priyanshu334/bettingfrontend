@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import LiveScoreDisplay from "@/components/Scoredisplay";
-import { MatchHeader } from "@/components/MatchHeader";
+import { MatchHeader} from "@/components/MatchHeader";
 import { MatchBettingOptions } from "@/components/MatchBettingOptions";
 import { RunsAndWicketsSection } from "@/components/RunsAndWicketsSection";
 import { PlayerStatsSection } from "@/components/PlayerStatsSection";
@@ -48,6 +48,19 @@ export interface RawApiPlayer {
   };
 }
 
+export interface MatchStatus {
+  tossCompleted: boolean;
+  tossWinner?: Team;
+  battingFirst?: Team;
+  innings?: number;
+  currentInnings?: {
+    battingTeam: Team;
+    bowlingTeam: Team;
+  };
+  matchStarted: boolean;
+  matchCompleted: boolean;
+}
+
 export interface Match {
   id: number;
   match: string;
@@ -59,6 +72,7 @@ export interface Match {
   visitorTeamLogo: string;
   score?: string;
   lineup?: Player[];
+  status: MatchStatus;
 }
 
 export interface PlayerRunsDisplayData {
@@ -181,7 +195,8 @@ export default function MatchDetails() {
             localTeamLogo: localTeam.image_path || '/team-placeholder.png',
             visitorTeamLogo: visitorTeam.image_path || '/team-placeholder.png',
             score: fixture.status === 'Finished' ? `Score: ${fixture.scoreboards?.find((s: any) => s.type === 'total')?.score || 'N/A'}` : (fixture.status || "Match not started"),
-            lineup: processedLineup
+            lineup: processedLineup,
+            status: fixture.status
         };
         setMatch(matchData);
 
@@ -225,14 +240,8 @@ export default function MatchDetails() {
   return (
     <div className="container mx-auto p-4 bg-gray-900 min-h-screen text-gray-200">
       <MatchHeader
-        match={match.match}
-        venue={match.venue}
-        date={match.date}
-        localTeam={match.localTeam}
-        visitorTeam={match.visitorTeam}
-        localTeamLogo={match.localTeamLogo}
-        visitorTeamLogo={match.visitorTeamLogo}
-        score={match.score}
+        match={match}
+ 
       />
       
       <LiveScoreDisplay />
@@ -244,17 +253,13 @@ export default function MatchDetails() {
       />
       
       <RunsAndWicketsSection
-        matchId={match.id}
-        localTeam={match.localTeam}
-        visitorTeam={match.visitorTeam}
+        match={match}
+
       />
       
       <PlayerStatsSection
-        matchId={match.id}
-        localTeam={match.localTeam}
-        visitorTeam={match.visitorTeam}
-        localPlayers={localPlayers}
-        visitorPlayers={visitorPlayers}
+        match={match}
+        
         oddsUpdateCount={oddsUpdateCount}
         generateRandomOdds={generateRandomOdds}
       />
