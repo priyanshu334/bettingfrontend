@@ -6,21 +6,28 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/stores/authStore";
 import axios from "axios";
-import { CalendarIcon, DollarSign, Percent, Trophy, AlertCircle } from "lucide-react";
+import { CalendarIcon, DollarSign, Percent, Trophy, AlertCircle, TrendingUp, TrendingDown } from "lucide-react";
 
 interface Bet {
   _id: string;
   matchId: string;
-  type: string;
+  type?: string;
+  betType?: string;
+  resultChecked: boolean;
+  resultWon?: boolean;
   status?: "won" | "lost" | "pending" | string;
   amount: number;
   odds: number;
   createdAt?: string;
   potentialWinnings?: number;
-  teamNames?: {
-    team1: string;
-    team2: string;
-  };
+  team1Name?: string;
+  team2Name?: string;
+  playerName?: string;
+  bowlerName?: string;
+  overUnder?: string;
+  runsTarget?: number;
+  wicketsTarget?: number;
+  boundaryType?: string;
   [key: string]: any;
 }
 
@@ -51,45 +58,57 @@ export default function UserBets() {
           }
         });
         
-        // Add team names mock data for better UI display
-        const mockTeams = [
-          { team1: "CSK", team2: "MI" },
-          { team1: "RCB", team2: "KKR" },
-          { team1: "DC", team2: "PBKS" },
-          { team1: "RR", team2: "SRH" },
-          { team1: "GT", team2: "LSG" }
-        ];
+        // Process placed bets
+        const processedPlacedBets = res.data.placedBets.map((bet: Bet) => {
+          // Calculate potential winnings
+          const potentialWinnings = bet.amount * bet.odds;
+          
+          // Determine bet type for display
+          let displayType = determineBetType(bet);
+          
+          return {
+            ...bet,
+            potentialWinnings,
+            type: displayType,
+            status: "pending"
+          };
+        });
         
-        // Calculate potential winnings for each bet
-        const processedPlacedBets = res.data.placedBets.map((bet: Bet, index: number) => ({
-          ...bet,
-          potentialWinnings: bet.amount * bet.odds,
-          teamNames: mockTeams[index % mockTeams.length]
-        }));
-        
-        const processedSettledBets = res.data.settledBets.map((bet: Bet, index: number) => ({
-          ...bet,
-          potentialWinnings: bet.amount * bet.odds,
-          teamNames: mockTeams[index % mockTeams.length]
-        }));
+        // Process settled bets
+        const processedSettledBets = res.data.settledBets.map((bet: Bet) => {
+          // Calculate potential winnings
+          const potentialWinnings = bet.amount * bet.odds;
+          
+          // Determine bet type for display
+          let displayType = determineBetType(bet);
+          
+          // Determine status from resultWon field
+          const status = bet.resultWon ? "won" : "lost";
+          
+          return {
+            ...bet,
+            potentialWinnings,
+            type: displayType,
+            status
+          };
+        });
         
         setPlacedBets(processedPlacedBets);
         setSettledBets(processedSettledBets);
         
         // Calculate stats
-        const wonBets = processedSettledBets.filter((bet:Bet)=> bet.status === "won");
+        const wonBets = processedSettledBets.filter((bet: Bet) => bet.resultWon === true);
         const totalWon = wonBets.length;
         const totalLost = processedSettledBets.length - totalWon;
         const winRate = processedSettledBets.length > 0 ? 
           Math.round((totalWon / processedSettledBets.length) * 100) : 0;
         
-        const profit = processedSettledBets.reduce((acc:any, bet:any) => {
-          if (bet.status === "won") {
+        const profit = processedSettledBets.reduce((acc: number, bet: Bet) => {
+          if (bet.resultWon === true) {
             return acc + (bet.amount * bet.odds - bet.amount);
-          } else if (bet.status === "lost") {
+          } else {
             return acc - bet.amount;
           }
-          return acc;
         }, 0);
         
         setStats({
@@ -109,6 +128,43 @@ export default function UserBets() {
 
     fetchBets();
   }, [userId, token]);
+
+  // Helper function to determine the bet type from the bet object properties
+  const determineBetType = (bet: Bet): string => {
+    // Check for boundary bet
+    if (bet.boundaryType) {
+      return `Boundary ${bet.boundaryType}`;
+    }
+    
+    // Check for bowler runs bet
+    if (bet.bowlerName) {
+      return `Bowler Runs: ${bet.bowlerName}`;
+    }
+    
+    // Check for match runs/wickets bet
+    if (bet.runsTarget !== undefined || bet.wicketsTarget !== undefined) {
+      if (bet.runsTarget !== undefined) {
+        return `Match Runs ${bet.overUnder || ""}: ${bet.runsTarget}`;
+      }
+      if (bet.wicketsTarget !== undefined) {
+        return `Match Wickets ${bet.overUnder || ""}: ${bet.wicketsTarget}`;
+      }
+      return "Match Runs/Wickets";
+    }
+    
+    // Check for player runs bet
+    if (bet.playerName && bet.runsTarget !== undefined) {
+      return `Player Runs: ${bet.playerName} ${bet.overUnder || ""} ${bet.runsTarget}`;
+    }
+    
+    // Check for player wickets bet
+    if (bet.playerName && bet.wicketsTarget !== undefined) {
+      return `Player Wickets: ${bet.playerName} ${bet.overUnder || ""} ${bet.wicketsTarget}`;
+    }
+    
+    // Default case for general bets
+    return bet.betType || "Match Bet";
+  };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "N/A";
@@ -171,82 +227,120 @@ export default function UserBets() {
     </svg>
   );
 
-  const renderBetCard = (bet: Bet) => (
-    <Card key={bet._id} className="mb-4 overflow-hidden transition-all hover:shadow-xl border-b-4 border-orange-500 rounded-lg">
-      <CardHeader className="bg-gradient-to-r from-orange-600 to-orange-400 pb-3 pt-4">
-        <div className="flex justify-between items-center">
-          <CardTitle className="text-lg font-bold text-black flex items-center gap-2">
-            <CricketBallIcon /> {bet.type}
-          </CardTitle>
-          {bet.status && (
-            <Badge className={`${getStatusColor(bet.status)} font-semibold px-3 py-1 rounded-full shadow-md`}>
-              {bet.status.toUpperCase()}
-            </Badge>
+  const renderBetCard = (bet: Bet) => {
+    // Extract team details if available
+    const team1 = bet.team1Name || "";
+    const team2 = bet.team2Name || "";
+    const hasTeams = team1 && team2;
+
+    return (
+      <Card key={bet._id} className="mb-4 overflow-hidden transition-all hover:shadow-xl border-b-4 border-orange-500 rounded-lg">
+        <CardHeader className="bg-gradient-to-r from-orange-600 to-orange-400 pb-3 pt-4">
+          <div className="flex justify-between items-center">
+            <CardTitle className="text-lg font-bold text-black flex items-center gap-2">
+              <CricketBallIcon /> {bet.type || "Match Bet"}
+            </CardTitle>
+            {bet.status && (
+              <Badge className={`${getStatusColor(bet.status)} font-semibold px-3 py-1 rounded-full shadow-md`}>
+                {bet.status.toUpperCase()}
+              </Badge>
+            )}
+          </div>
+          
+          {hasTeams && (
+            <div className="mt-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-2">
+              <div className="flex items-center justify-center text-black">
+                <span className="font-bold">{team1}</span>
+                <span className="mx-2 text-orange-100">vs</span>
+                <span className="font-bold">{team2}</span>
+              </div>
+            </div>
           )}
-        </div>
-        
-        {bet.teamNames && (
-          <div className="mt-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-2">
-            <div className="flex items-center justify-center text-black">
-              <span className="font-bold">{bet.teamNames.team1}</span>
-              <span className="mx-2 text-orange-100">vs</span>
-              <span className="font-bold">{bet.teamNames.team2}</span>
+          
+          {bet.playerName && !bet.bowlerName && (
+            <div className="mt-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-2">
+              <div className="flex items-center justify-center text-black">
+                <span className="font-bold">Player: {bet.playerName}</span>
+              </div>
+            </div>
+          )}
+          
+          {bet.bowlerName && (
+            <div className="mt-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-2">
+              <div className="flex items-center justify-center text-black">
+                <span className="font-bold">Bowler: {bet.bowlerName}</span>
+              </div>
+            </div>
+          )}
+          
+          {(bet.overUnder && (bet.runsTarget !== undefined || bet.wicketsTarget !== undefined)) && (
+            <div className="mt-2 bg-white bg-opacity-10 backdrop-blur-sm rounded-lg p-2">
+              <div className="flex items-center justify-center text-black gap-2">
+                {bet.overUnder === "over" ? (
+                  <TrendingUp className="h-4 w-4 text-green-700" />
+                ) : (
+                  <TrendingDown className="h-4 w-4 text-red-700" />
+                )}
+                <span className="font-bold">
+                  {bet.overUnder.toUpperCase()} {bet.runsTarget !== undefined ? `${bet.runsTarget} Runs` : `${bet.wicketsTarget} Wickets`}
+                </span>
+              </div>
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="p-4 space-y-4 bg-gradient-to-b from-orange-50 to-white">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-orange-100 p-2 rounded-full shadow-md">
+                <DollarSign className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Bet Amount</p>
+                <p className="text-base font-bold text-orange-700">₹{(bet.amount || 0).toLocaleString()}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="bg-orange-100 p-2 rounded-full shadow-md">
+                <Percent className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Odds</p>
+                <p className="text-base font-bold text-orange-700">{bet.odds}x</p>
+              </div>
             </div>
           </div>
-        )}
-      </CardHeader>
-      <CardContent className="p-4 space-y-4 bg-gradient-to-b from-orange-50 to-white">
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-orange-100 p-2 rounded-full shadow-md">
-              <DollarSign className="h-5 w-5 text-orange-600" />
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-orange-100 p-2 rounded-full shadow-md">
+                <CalendarIcon className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Placed On</p>
+                <p className="text-base font-bold text-orange-700">{formatDate(bet.createdAt)}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500">Bet Amount</p>
-              <p className="text-base font-bold text-orange-700">₹{(bet.amount || 0).toLocaleString()}</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="bg-orange-100 p-2 rounded-full shadow-md">
-              <Percent className="h-5 w-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500">Odds</p>
-              <p className="text-base font-bold text-orange-700">{bet.odds}x</p>
-            </div>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex items-center gap-3">
-            <div className="bg-orange-100 p-2 rounded-full shadow-md">
-              <CalendarIcon className="h-5 w-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500">Placed On</p>
-              <p className="text-base font-bold text-orange-700">{formatDate(bet.createdAt)}</p>
+            <div className="flex items-center gap-3">
+              <div className="bg-orange-100 p-2 rounded-full shadow-md">
+                <Trophy className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-500">Potential Win</p>
+                <p className="text-base font-bold text-orange-700">₹{(bet.potentialWinnings || 0).toLocaleString()}</p>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="bg-orange-100 p-2 rounded-full shadow-md">
-              <Trophy className="h-5 w-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500">Potential Win</p>
-              <p className="text-base font-bold text-orange-700">₹{(bet.potentialWinnings || 0).toLocaleString()}</p>
-            </div>
+          
+          <div className="pt-2 mt-1 text-sm text-slate-600 border-t border-orange-100">
+            <p className="flex items-center gap-2">
+              <span className="bg-orange-100 px-2 py-1 rounded text-orange-700 font-medium text-xs">Match Reference:</span> 
+              <span className="truncate text-xs">{bet.matchId}</span>
+            </p>
           </div>
-        </div>
-        
-        <div className="pt-2 mt-1 text-sm text-slate-600 border-t border-orange-100">
-          <p className="flex items-center gap-2">
-            <span className="bg-orange-100 px-2 py-1 rounded text-orange-700 font-medium text-xs">Match Reference:</span> 
-            <span className="truncate text-xs">{bet.matchId}</span>
-          </p>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
   const renderSkeletons = () => (
     <>
@@ -345,13 +439,13 @@ export default function UserBets() {
             value="placed" 
             className="text-base data-[state=active]:bg-orange-500 data-[state=active]:text-black data-[state=active]:shadow-md rounded-lg py-3"
           >
-            Active Bets
+            Active Bets ({placedBets.length})
           </TabsTrigger>
           <TabsTrigger 
             value="settled" 
             className="text-base data-[state=active]:bg-orange-500 data-[state=active]:text-black data-[state=active]:shadow-md rounded-lg py-3"
           >
-            Settled Bets
+            Settled Bets ({settledBets.length})
           </TabsTrigger>
         </TabsList>
         
