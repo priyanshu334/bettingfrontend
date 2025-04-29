@@ -212,7 +212,7 @@ export default function LiveScorecard() {
       if (id && (!matches[id] || matches[id].status !== "Finished")) {
         fetchMatchData(false);
       }
-    }, 60000); // Update every 1 minute (60000ms) instead of 30 seconds
+    }, 30000); // Update every 1 minute (60000ms) instead of 30 seconds
 
     return () => clearInterval(intervalId);
   }, [id, matches]);

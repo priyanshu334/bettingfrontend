@@ -265,7 +265,7 @@ const RunsOptionsCard: React.FC<RunsOptionsCardProps> = ({
             <div className="mb-4 p-3 bg-green-100 rounded">
               <div className="flex justify-between text-sm">
                 <span className="font-medium text-gray-700">Potential Return:</span>
-                <span className="font-bold text-green-700">₹{(amount * selectedOdds).toFixed(2)}</span>
+                <span className="font-bold text-green-700">₹{(amount * 2).toFixed(2)}</span>
               </div>
             </div>
             {error && (
