@@ -81,7 +81,7 @@ const PlayerWicketsCard: React.FC<PlayerWicketsCardProps> = ({
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerwickets/place`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/playerwicket/place`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
