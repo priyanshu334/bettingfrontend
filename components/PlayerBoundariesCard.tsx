@@ -7,7 +7,7 @@ import { useAuthStore } from "@/stores/authStore"; // Adjust path as needed
 interface Player {
   name: string;
   boundaries: number;
-  id?: number;
+  id: number; // Changed to required since API needs playerId
   teamName?: string;
 }
 
@@ -70,6 +70,7 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
     setIsProcessing(true);
 
     try {
+      // Updated API payload to match backend requirements
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/boundarybet/place`, {
         method: "POST",
         headers: {
@@ -79,7 +80,7 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
         body: JSON.stringify({
           userId,
           matchId,
-          teamName: selectedPlayer.teamName,
+          playerId: selectedPlayer.id, // Send playerId as required by API
           playerName: selectedPlayer.name,
           predictedBoundaries: selectedPlayer.boundaries,
           betAmount: amount
@@ -92,9 +93,11 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
         throw new Error(data.error || "Failed to place bet");
       }
       
-      // Update user balance in store if provided in response
-      if (data.newBalance !== undefined) {
-        updateUserBalance(data.newBalance);
+      // Update user balance
+      if (user && user.money !== undefined) {
+        // Calculate new balance based on the bet amount
+        const newBalance = user.money - amount;
+        updateUserBalance(newBalance);
       }
       
       // Close the modal
@@ -104,8 +107,8 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
       setShowSuccessPopup(true);
       
       // Also show toast notification
-      toast.success(data.message, {
-        description: `New balance: ₹${data.newBalance?.toLocaleString() || user?.money.toLocaleString()}`
+      toast.success("Bet placed successfully", {
+        description: `New balance: ₹${user?.money ? (user.money - amount).toLocaleString() : '0'}`
       });
       
     } catch (error) {
@@ -183,6 +186,9 @@ const PlayerBoundariesCard: React.FC<PlayerBoundariesCardProps> = ({
                   
                   <div className="font-medium">Predicted Boundaries:</div>
                   <div className="font-bold text-blue-700">{selectedPlayer.boundaries}</div>
+
+                  <div className="font-medium">Player ID:</div>
+                  <div className="font-bold text-blue-700">{selectedPlayer.id}</div>
                 </div>
               </div>
 
