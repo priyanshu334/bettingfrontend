@@ -6,7 +6,7 @@ import Link from "next/link";
 import LiveScoreDisplay from "@/components/Scoredisplay";
 import { MatchHeader} from "@/components/MatchHeader";
 import { MatchBettingOptions } from "@/components/MatchBettingOptions";
-import { RunsAndWicketsSection } from "@/components/RunsAndWicketsSection";
+import { RunsSection } from "@/components/RunsAndWicketsSection";
 import { PlayerStatsSection } from "@/components/PlayerStatsSection";
 
 export interface Team {
@@ -252,8 +252,9 @@ export default function MatchDetails() {
         generateRandomOdds={generateRandomOdds}
       />
       
-      <RunsAndWicketsSection
+      <RunsSection
         match={match}
+
 
       />
       
