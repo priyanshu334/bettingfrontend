@@ -61,7 +61,7 @@ export default function UserBets() {
         // Process placed bets
         const processedPlacedBets = res.data.placedBets.map((bet: Bet) => {
           // Calculate potential winnings
-          const potentialWinnings = bet.amount * bet.odds;
+          const potentialWinnings = bet.amount * 2;
           
           // Determine bet type for display
           let displayType = determineBetType(bet);
