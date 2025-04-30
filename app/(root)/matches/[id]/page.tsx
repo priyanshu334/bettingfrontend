@@ -4,11 +4,12 @@ import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
 import LiveScoreDisplay from "@/components/Scoredisplay";
-import { MatchHeader} from "@/components/MatchHeader";
+import { MatchHeader } from "@/components/MatchHeader";
 import { MatchBettingOptions } from "@/components/MatchBettingOptions";
 import { RunsSection } from "@/components/RunsAndWicketsSection";
 import { PlayerStatsSection } from "@/components/PlayerStatsSection";
 
+// src/types.ts
 export interface Team {
   id: number;
   name: string;
@@ -59,6 +60,9 @@ export interface MatchStatus {
   };
   matchStarted: boolean;
   matchCompleted: boolean;
+  oversCompleted?: number;
+  ballsCompleted?: number;
+  completedOvers: number[];
 }
 
 export interface Match {
@@ -160,7 +164,15 @@ export default function MatchDetails() {
         if (fixture.starting_at) {
           try {
              const startingAt = new Date(fixture.starting_at);
-             const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata', hour12: true };
+             const options: Intl.DateTimeFormatOptions = { 
+               year: 'numeric', 
+               month: 'long', 
+               day: 'numeric', 
+               hour: '2-digit', 
+               minute: '2-digit', 
+               timeZone: 'Asia/Kolkata', 
+               hour12: true 
+             };
              formattedDate = startingAt.toLocaleString("en-IN", options);
           } catch (dateError) {
              console.error("Error formatting date:", dateError);
@@ -196,7 +208,21 @@ export default function MatchDetails() {
             visitorTeamLogo: visitorTeam.image_path || '/team-placeholder.png',
             score: fixture.status === 'Finished' ? `Score: ${fixture.scoreboards?.find((s: any) => s.type === 'total')?.score || 'N/A'}` : (fixture.status || "Match not started"),
             lineup: processedLineup,
-            status: fixture.status
+            status: {
+                tossCompleted: fixture.tosswon !== undefined,
+                tossWinner: fixture.tosswon === localTeam.id ? localTeam : visitorTeam,
+                battingFirst: fixture.batting_first === localTeam.id ? localTeam : visitorTeam,
+                innings: fixture.innings,
+                currentInnings: fixture.innings && {
+                    battingTeam: fixture.innings % 2 === 1 ? localTeam : visitorTeam,
+                    bowlingTeam: fixture.innings % 2 === 1 ? visitorTeam : localTeam
+                },
+                matchStarted: fixture.status === 'In Progress',
+                matchCompleted: fixture.status === 'Finished',
+                oversCompleted: 0,
+                ballsCompleted: 0,
+                completedOvers: []
+            }
         };
         setMatch(matchData);
 
@@ -239,28 +265,16 @@ export default function MatchDetails() {
 
   return (
     <div className="container mx-auto p-4 bg-gray-900 min-h-screen text-gray-200">
-      <MatchHeader
-        match={match}
- 
-      />
-      
+      <MatchHeader match={match} />
       <LiveScoreDisplay />
-      
       <MatchBettingOptions
         match={match}
         oddsUpdateCount={oddsUpdateCount}
         generateRandomOdds={generateRandomOdds}
       />
-      
-      <RunsSection
-        match={match}
-
-
-      />
-      
+      <RunsSection match={match} />
       <PlayerStatsSection
         match={match}
-        
         oddsUpdateCount={oddsUpdateCount}
         generateRandomOdds={generateRandomOdds}
       />
