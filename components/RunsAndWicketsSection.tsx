@@ -307,6 +307,7 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
         if (!response.ok) throw new Error('Failed to fetch match data');
         
         const data = await response.json();
+        console.log("data is ",data)
         
         // Parse ball history from API response
         const ballHistory = parseBallHistory(data.data);
