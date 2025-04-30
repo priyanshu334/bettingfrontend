@@ -12,7 +12,7 @@ export async function GET(
     return NextResponse.json({ error: "API token is missing" }, { status: 500 });
   }
 
-  const url = `https://cricket.sportmonks.com/api/v2.0/fixtures/${fixtureId}?api_token=${apiToken}&include=localteam,visitorteam,venue,lineup,batting,bowling,runs`;
+  const url = `https://cricket.sportmonks.com/api/v2.0/fixtures/${fixtureId}?api_token=${apiToken}&include=localteam,visitorteam,venue,lineup,batting,bowling,runs,balls`;
 
   try {
     const response = await fetch(url, {
