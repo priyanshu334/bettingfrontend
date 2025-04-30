@@ -28,7 +28,8 @@ export interface MatchStatus {
   matchStarted: boolean;
   matchCompleted: boolean;
   oversCompleted?: number;
-  ballsCompleted?: number; // Add balls completed
+  ballsCompleted?: number;
+  completedOvers: number[]; // Track completed overs for current innings
 }
 
 export interface Match {
@@ -124,7 +125,13 @@ interface RunsSectionProps {
 }
 
 export function RunsSection({ match: initialMatch }: RunsSectionProps) {
-  const [match, setMatch] = useState<Match>(initialMatch);
+  const [match, setMatch] = useState<Match>({
+    ...initialMatch,
+    status: {
+      ...initialMatch.status,
+      completedOvers: [] // Initialize completed overs array
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [allRunOptions, setAllRunOptions] = useState<RunOption[]>([]);
   const [displayedOptions, setDisplayedOptions] = useState<RunOption[]>([]);
@@ -148,24 +155,46 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     // Get the latest ball
     const latestBall = balls[balls.length - 1];
     
-    // Calculate overs and balls
-    const overNumber = Math.floor(latestBall.ball);
-    const ballNumber = Math.round((latestBall.ball % 1) * 10);
+    // Calculate current over and ball
+    const ballValue = latestBall.ball;
+    const overNumber = Math.floor(ballValue);
+    const ballNumber = Math.round((ballValue % 1) * 10);
     
-    // Update match status with current over and ball
-    setMatch(prevMatch => ({
-      ...prevMatch,
-      status: {
-        ...prevMatch.status,
-        oversCompleted: overNumber,
-        ballsCompleted: ballNumber,
-        matchStarted: true
+    // Determine if we're in a new innings
+    const isNewInnings = match.status.innings !== latestBall.fixture_id;
+    
+    setMatch(prevMatch => {
+      // Reset completed overs if it's a new innings
+      const completedOvers = isNewInnings ? [] : [...prevMatch.status.completedOvers];
+      
+      // Check if we've completed an over (ballNumber === 6 and it's not already marked as completed)
+      if (ballNumber === 6 && !completedOvers.includes(overNumber)) {
+        completedOvers.push(overNumber);
       }
-    }));
+      
+      return {
+        ...prevMatch,
+        status: {
+          ...prevMatch.status,
+          oversCompleted: overNumber,
+          ballsCompleted: ballNumber,
+          matchStarted: true,
+          completedOvers,
+          innings: latestBall.fixture_id,
+          currentInnings: {
+            battingTeam: latestBall.team_id === prevMatch.localTeam.id ? 
+              prevMatch.localTeam : prevMatch.visitorTeam,
+            bowlingTeam: latestBall.team_id === prevMatch.localTeam.id ? 
+              prevMatch.visitorTeam : prevMatch.localTeam
+          }
+        }
+      };
+    });
   };
 
-  // Fetch ball-by-ball data more frequently when match is in progress
+  // Fetch ball-by-ball data
   const fetchBallData = async () => {
+    setIsLoading(true);
     try {
       const response = await fetch(
         `https://cricket.sportmonks.com/api/v2.0/fixtures/${initialMatch.id}?api_token=${process.env.NEXT_PUBLIC_SPORTMONKS_API_TOKEN}&include=balls`
@@ -181,6 +210,8 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
       }
     } catch (error) {
       console.error("Error fetching ball data:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -191,35 +222,28 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     const currentBattingTeamId = match.status.currentInnings?.battingTeam.id;
     if (!currentBattingTeamId) return;
     
-    const currentOver = match.status.oversCompleted || 0;
-    const currentBall = match.status.ballsCompleted || 0;
+    const completedOvers = match.status.completedOvers || [];
     
-    // We'll hide the current over option when the over is completed (6 balls)
-    // So we show options for overs that are either:
-    // - For the current team: upcoming overs (greater than current over)
-    // - For the other team: all overs (since they'll bat in next innings)
+    // Filter options to show:
+    // - For current batting team: only overs not yet completed and not in progress
+    // - For other team: all overs (since they'll bat in next innings)
     // - Total match options
-    
     const filtered = allRunOptions.filter((option: RunOption) => {
-      // Keep total match options
+      // Always keep total match options
       if (!option.overNumber) return true;
       
       // For current batting team
       if (option.teamId === currentBattingTeamId) {
-        // If current over is complete (6 balls), hide this over's option
-        if (option.overNumber === Math.ceil(currentOver)) {
-          return currentBall < 6; // Only show if over isn't complete
-        }
-        // Show future overs
-        return option.overNumber > currentOver;
+        // Hide if the over is completed
+        return !completedOvers.includes(option.overNumber);
       }
       
-      // For other team (next innings), show all overs
+      // For other team, show all overs
       return true;
     });
     
     setDisplayedOptions(filtered);
-  }, [match.status.oversCompleted, match.status.ballsCompleted, match.status.currentInnings, allRunOptions]);
+  }, [match.status.completedOvers, match.status.currentInnings, allRunOptions]);
 
   // Set up polling for ball data
   useEffect(() => {
@@ -251,10 +275,14 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
         options={displayedOptions}
         teamId={match.status.currentInnings?.battingTeam.id || match.localTeam.id}
       />
-      {/* Optional: Display current over status */}
+      {/* Display current match status */}
       {match.status.matchStarted && (
         <div className="text-sm text-gray-300 mt-2">
-          Current: Over {match.status.oversCompleted}.{match.status.ballsCompleted}
+          Current: {match.status.currentInnings?.battingTeam.name} batting, 
+          Over {match.status.oversCompleted}.{match.status.ballsCompleted}
+          {match.status.completedOvers.length > 0 && (
+            <span>, Completed overs: {match.status.completedOvers.join(', ')}</span>
+          )}
         </div>
       )}
     </div>
