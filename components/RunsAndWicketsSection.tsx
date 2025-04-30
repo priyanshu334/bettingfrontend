@@ -55,18 +55,17 @@ interface RunOption {
   overNumber?: number;
 }
 
-// Generate better odds with YES always less than NO (better payout)
+// Generate odds with YES always greater than NO (better payout)
 function generateBetterOdds(base: number): { noOdds: number; yesOdds: number } {
   // Create a base volatility between 10-20%
   const volatility = 0.1 + Math.random() * 0.1;
   
-  // Generate NO odds (slightly above base value)
-  const noModifier = 1 + volatility;
-  const noOdds = Math.round(base * noModifier);
+  // Generate NO odds (base value as reference)
+  const noOdds = Math.round(base);
   
-  // Generate YES odds (slightly below base value)
-  // Making sure YES odds are always 10-25% lower than NO odds for better payout
-  const yesProportion = 0.75 + Math.random() * 0.15; // 75-90% of NO odds
+  // Generate YES odds (always higher than NO odds)
+  // Making YES odds 10-25% higher than NO odds for better payout
+  const yesProportion = 1.1 + Math.random() * 0.15; // 110-125% of NO odds
   const yesOdds = Math.round(noOdds * yesProportion);
   
   return { noOdds, yesOdds };

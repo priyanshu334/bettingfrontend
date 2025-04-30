@@ -273,9 +273,8 @@ export function MatchBettingOptions({
           stake: "100",
         },
       ],
-      tossOdds: currentMatch.status.tossCompleted
-        ? []
-        : [
+      tossOdds: !currentMatch.status.tossCompleted // Show toss odds only if toss hasn't been completed
+        ? [
             {
               teamId: localTeamId,
               team: localTeamShort,
@@ -290,7 +289,8 @@ export function MatchBettingOptions({
               lay: "0",
               stake: "100",
             },
-          ],
+          ]
+        : [],
       winPrediction: [
         {
           teamId: localTeamId,
@@ -328,7 +328,7 @@ export function MatchBettingOptions({
           <MatchCard
             {...matchCardData}
             key={`match-card-${oddsUpdateCount}-${currentMatch.status.tossCompleted}`}
-            hideToss={currentMatch.status.tossCompleted}
+            hideToss={currentMatch.status.tossCompleted} // Correctly hides toss after completion
           />
         ) : (
           <p className="text-gray-500">Match betting data not available yet.</p>
