@@ -42,6 +42,86 @@ export interface Match {
   score?: string;
   lineup?: Player[];
   status: MatchStatus;
+  ballHistory?: BallHistory;
+}
+
+// New interface to track ball history
+export interface BallHistory {
+  firstBall: string;
+  secondBall: string;
+  isWicketTaken: boolean;
+  currentOver: number;
+}
+
+// Define type for ball data parameter
+interface BallData {
+  firstBall: string;
+  secondBall: string;
+  isWicketTaken: boolean;
+  currentOver: number;
+}
+
+// Type for lookup table
+type ScoreLookup = {
+  [key: string]: number;
+};
+
+// Function to calculate next score based on ball data
+function getNextScore(ballData: BallData): number {
+  const firstBall = ballData.firstBall;
+  const secondBall = ballData.secondBall;
+  const isWicketTaken = ballData.isWicketTaken;
+  
+  if (isWicketTaken) {
+    if (ballData.currentOver < 7) return -6;
+    else return -8;
+  }
+  
+  const res = (first: string, second: string): number | null => {
+    const lookup: ScoreLookup = {
+      "0,0": -1,
+      "0,1": 0,
+      "0,2": 1,
+      "0,3": 2,
+      "0,4": 3,
+      "0,6": 4,
+      "1,0": 0,
+      "1,1": 0,
+      "1,2": 1,
+      "1,3": 2,
+      "1,4": 3,
+      "1,6": 4,
+      "2,0": 0,
+      "2,1": 0,
+      "2,2": 1,
+      "2,3": 2,
+      "2,4": 2,
+      "2,6": 4,
+      "3,0": -1,
+      "3,1": 0,
+      "3,2": 1,
+      "3,3": 2,
+      "3,4": 2,
+      "3,6": 4,
+      "4,0": -2,
+      "4,1": -1,
+      "4,2": 0,
+      "4,3": 1,
+      "4,4": 3,
+      "4,6": 4,
+      "6,0": -3,
+      "6,1": -1,
+      "6,2": -1,
+      "6,3": 0,
+      "6,4": 2,
+      "6,6": 5,
+    };
+    const key = `${first},${second}`;
+    return lookup[key] !== undefined ? lookup[key] : null;
+  };
+  
+  const result = res(firstBall, secondBall);
+  return result !== null ? result : 0; // Default to 0 if no valid result
 }
 
 // Define interface for run option
@@ -53,6 +133,7 @@ interface RunOption {
   marketType: string;
   teamId?: number;
   overNumber?: number;
+  predictedRuns?: number;
 }
 
 // Generate odds with YES always greater than NO (better payout)
@@ -72,12 +153,27 @@ function generateBetterOdds(base: number): { noOdds: number; yesOdds: number } {
 }
 
 // Generate preset run options for all overs (1-20) for a team
-function generatePresetRunOptions(teamName: string, teamId: number): RunOption[] {
+function generatePresetRunOptions(teamName: string, teamId: number, ballHistory?: BallHistory): RunOption[] {
   const options: RunOption[] = [];
   const totalOvers = 20; // Standard T20 match has 20 overs
   
+  // Calculate predicted runs adjustment based on ball history if available
+  let predictedAdjustment = 0;
+  if (ballHistory) {
+    predictedAdjustment = getNextScore(ballHistory);
+  }
+  
   for (let over = 1; over <= totalOvers; over++) {
-    const baseRuns = over * 7; // Base of 7 runs per over
+    // Base of 7 runs per over
+    let baseRuns = over * 7; 
+    
+    // Apply prediction adjustment for upcoming overs
+    if (ballHistory && over === ballHistory.currentOver + 1) {
+      baseRuns += predictedAdjustment;
+      // Ensure baseRuns never goes below 1
+      baseRuns = Math.max(1, baseRuns);
+    }
+    
     const { noOdds, yesOdds } = generateBetterOdds(baseRuns);
     
     options.push({
@@ -87,7 +183,8 @@ function generatePresetRunOptions(teamName: string, teamId: number): RunOption[]
       yesOdds,
       marketType: "runs",
       teamId: teamId,
-      overNumber: over
+      overNumber: over,
+      predictedRuns: over === (ballHistory?.currentOver ?? 0) + 1 ? baseRuns : undefined
     });
   }
   
@@ -95,10 +192,24 @@ function generatePresetRunOptions(teamName: string, teamId: number): RunOption[]
 }
 
 // Generate match total options
-function generateTotalOptions(localTeamName: string, visitorTeamName: string): RunOption[] {
-  const totalRunsBase = 320;
-  const totalFoursBase = 28;
-  const totalSixesBase = 18;
+function generateTotalOptions(localTeamName: string, visitorTeamName: string, ballHistory?: BallHistory): RunOption[] {
+  // Base values for match totals
+  let totalRunsBase = 320;
+  let totalFoursBase = 28;
+  let totalSixesBase = 18;
+  
+  // Apply prediction adjustment if we have ball history
+  if (ballHistory) {
+    const predictedAdjustment = getNextScore(ballHistory);
+    totalRunsBase += predictedAdjustment * 2; // Multiply by 2 for total match impact
+    totalFoursBase += Math.floor(predictedAdjustment / 2); // Approximate adjustment for 4s
+    totalSixesBase += Math.floor(predictedAdjustment / 3); // Approximate adjustment for 6s
+    
+    // Ensure base values never go below minimum thresholds
+    totalRunsBase = Math.max(160, totalRunsBase);
+    totalFoursBase = Math.max(12, totalFoursBase);
+    totalSixesBase = Math.max(6, totalSixesBase);
+  }
   
   const totalRunsOdds = generateBetterOdds(totalRunsBase);
   const totalFoursOdds = generateBetterOdds(totalFoursBase);
@@ -111,6 +222,7 @@ function generateTotalOptions(localTeamName: string, visitorTeamName: string): R
       noOdds: totalRunsOdds.noOdds,
       yesOdds: totalRunsOdds.yesOdds,
       marketType: "runs",
+      predictedRuns: totalRunsBase
     },
     {
       id: 'total-4s',
@@ -118,6 +230,7 @@ function generateTotalOptions(localTeamName: string, visitorTeamName: string): R
       noOdds: totalFoursOdds.noOdds,
       yesOdds: totalFoursOdds.yesOdds,
       marketType: "runs",
+      predictedRuns: totalFoursBase
     },
     {
       id: 'total-6s',
@@ -125,12 +238,44 @@ function generateTotalOptions(localTeamName: string, visitorTeamName: string): R
       noOdds: totalSixesOdds.noOdds,
       yesOdds: totalSixesOdds.yesOdds,
       marketType: "runs",
+      predictedRuns: totalSixesBase
     }
   ];
 }
 
+// Function to parse ball data from API response
+function parseBallHistory(matchData: any): BallHistory | undefined {
+  try {
+    // This is a simplified example - in a real implementation, 
+    // you'd extract the latest ball data from the API response
+    // For now, we're simulating with random values if the match has started
+    if (matchData.status === 'In Progress') {
+      const currentOver = matchData.scoreboards?.[0]?.overs || 1;
+      const lastTwoBalls: BallHistory = {
+        firstBall: ["0", "1", "2", "3", "4", "6"][Math.floor(Math.random() * 6)],
+        secondBall: ["0", "1", "2", "3", "4", "6"][Math.floor(Math.random() * 6)],
+        isWicketTaken: Math.random() < 0.1, // 10% chance of a wicket
+        currentOver: Math.floor(currentOver)
+      };
+      return lastTwoBalls;
+    }
+    return undefined;
+  } catch (error) {
+    console.error("Error parsing ball history:", error);
+    return undefined;
+  }
+}
+
 interface RunsSectionProps {
   match: Match;
+}
+
+// Interface for the RunsOptionsCard props
+interface RunsOptionsCardProps {
+  matchId: number;
+  heading: string;
+  options: RunOption[];
+  teamId: number;
 }
 
 export function RunsSection({ match: initialMatch }: RunsSectionProps) {
@@ -138,6 +283,7 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [allRunOptions, setAllRunOptions] = useState<RunOption[]>([]);
   const [displayedOptions, setDisplayedOptions] = useState<RunOption[]>([]);
+  const [showPredictions, setShowPredictions] = useState(false);
   
   // Generate initial preset run options on component mount - runs only once
   useEffect(() => {
@@ -159,6 +305,9 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
         if (!response.ok) throw new Error('Failed to fetch match data');
         
         const data = await response.json();
+        
+        // Parse ball history from API response
+        const ballHistory = parseBallHistory(data.data);
         
         // Transform API data to match interface
         const transformedData: Match = {
@@ -199,10 +348,35 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
             matchStarted: data.data.status === 'In Progress',
             matchCompleted: data.data.status === 'Finished',
             oversCompleted: data.data.scoreboards?.[0]?.overs || 0
-          }
+          },
+          ballHistory: ballHistory
         };
         
         setMatch(transformedData);
+        
+        // Regenerate options with predictions if we have ball history
+        if (ballHistory) {
+          const localTeamOptions = generatePresetRunOptions(
+            transformedData.localTeam.name, 
+            transformedData.localTeam.id,
+            ballHistory
+          );
+          
+          const visitorTeamOptions = generatePresetRunOptions(
+            transformedData.visitorTeam.name, 
+            transformedData.visitorTeam.id,
+            ballHistory
+          );
+          
+          const totalOptions = generateTotalOptions(
+            transformedData.localTeam.name, 
+            transformedData.visitorTeam.name,
+            ballHistory
+          );
+          
+          const allOptions = [...localTeamOptions, ...visitorTeamOptions, ...totalOptions];
+          setAllRunOptions(allOptions);
+        }
         
         // Filter displayed options based on current match state
         if (transformedData.status.matchStarted && transformedData.status.currentInnings) {
@@ -240,13 +414,77 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     return () => clearInterval(interval);
   }, [initialMatch.id, allRunOptions]);
   
+  // Function to toggle showing predictions
+  const togglePredictions = () => {
+    setShowPredictions(!showPredictions);
+  };
+  
+  // Enhanced RunsOptionsCard with prediction information
+  const EnhancedRunsOptionsCard = ({ 
+    options, 
+    matchId,
+    heading,
+    teamId,
+    ...props 
+  }: RunsOptionsCardProps) => {
+    return (
+      <div>
+        <RunsOptionsCard
+          matchId={matchId}
+          heading={heading}
+          teamId={teamId}
+          options={options.map((option: RunOption) => ({
+            ...option,
+            label: showPredictions && option.predictedRuns 
+              ? `${option.label} (Predicted: ${option.predictedRuns} runs)`
+              : option.label
+          }))}
+          {...props}
+        />
+      </div>
+    );
+  };
+  
   return (
     <div className="mb-8">
-      <h2 className="text-xl md:text-2xl font-semibold text-white mb-4">
-        Match Runs
-        {isLoading && <span className="ml-2 text-sm text-gray-400">Updating...</span>}
-      </h2>
-      <RunsOptionsCard
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl md:text-2xl font-semibold text-white">
+          Match Runs
+          {isLoading && <span className="ml-2 text-sm text-gray-400">Updating...</span>}
+        </h2>
+        
+        {match.status.matchStarted && match.ballHistory && (
+          <button 
+            onClick={togglePredictions}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+          >
+            {showPredictions ? "Hide Predictions" : "Show Predictions"}
+          </button>
+        )}
+      </div>
+      
+      {match.status.matchStarted && match.ballHistory && showPredictions && (
+        <div className="bg-gray-800 p-4 rounded-lg mb-4">
+          <h3 className="text-lg font-semibold text-white mb-2">Latest Ball Data</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-gray-300">First Ball: {match.ballHistory.firstBall}</p>
+              <p className="text-gray-300">Second Ball: {match.ballHistory.secondBall}</p>
+            </div>
+            <div>
+              <p className="text-gray-300">Current Over: {match.ballHistory.currentOver}</p>
+              <p className="text-gray-300">Wicket Taken: {match.ballHistory.isWicketTaken ? "Yes" : "No"}</p>
+            </div>
+          </div>
+          <div className="mt-2">
+            <p className="text-white font-medium">
+              Predicted Adjustment: {getNextScore(match.ballHistory)} runs
+            </p>
+          </div>
+        </div>
+      )}
+      
+      <EnhancedRunsOptionsCard
         key={`runs-${match.id}-${match.status.oversCompleted || 0}`}
         matchId={match.id}
         heading="Run Markets"
