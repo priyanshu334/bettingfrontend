@@ -8,8 +8,8 @@ import { MatchHeader } from "@/components/MatchHeader";
 import { MatchBettingOptions } from "@/components/MatchBettingOptions";
 import { RunsSection } from "@/components/RunsAndWicketsSection";
 import { PlayerStatsSection } from "@/components/PlayerStatsSection";
-
-// src/types.ts
+// Import types from the shared types file
+// src/types/match.ts
 export interface Team {
   id: number;
   name: string;
@@ -25,44 +25,23 @@ export interface Player {
   position: string;
 }
 
-export interface RawApiPlayer {
-  id: number;
-  country_id: number;
-  firstname: string;
-  lastname: string;
-  fullname: string;
-  image_path: string;
-  dateofbirth: string;
-  gender: string;
-  battingstyle: string | null;
-  bowlingstyle: string | null;
-  position?: {
-    id: number;
-    name: string;
-  };
-  updated_at: string;
-  lineup?: {
-    team_id: number;
-    captain: boolean;
-    wicketkeeper: boolean;
-    substitution: boolean;
-  };
-}
-
 export interface MatchStatus {
   tossCompleted: boolean;
   tossWinner?: Team;
   battingFirst?: Team;
-  innings?: number;
+  innings: number; // Non-optional
   currentInnings?: {
     battingTeam: Team;
     bowlingTeam: Team;
   };
   matchStarted: boolean;
   matchCompleted: boolean;
-  oversCompleted?: number;
-  ballsCompleted?: number;
+  oversCompleted: number;
+  ballsCompleted: number;
   completedOvers: number[];
+  teamCompletedOvers: {
+    [key: number]: number[];
+  };
 }
 
 export interface Match {
@@ -113,6 +92,30 @@ export interface RunsOptionsOption {
   noOdds: number;
   yesOdds: number;
   marketType: string;
+}
+
+export interface RawApiPlayer {
+  id: number;
+  country_id: number;
+  firstname: string;
+  lastname: string;
+  fullname: string;
+  image_path: string;
+  dateofbirth: string;
+  gender: string;
+  battingstyle: string | null;
+  bowlingstyle: string | null;
+  position?: {
+    id: number;
+    name: string;
+  };
+  updated_at: string;
+  lineup?: {
+    team_id: number;
+    captain: boolean;
+    wicketkeeper: boolean;
+    substitution: boolean;
+  };
 }
 
 export default function MatchDetails() {
@@ -212,7 +215,7 @@ export default function MatchDetails() {
                 tossCompleted: fixture.tosswon !== undefined,
                 tossWinner: fixture.tosswon === localTeam.id ? localTeam : visitorTeam,
                 battingFirst: fixture.batting_first === localTeam.id ? localTeam : visitorTeam,
-                innings: fixture.innings,
+                innings: fixture.innings !== undefined ? fixture.innings : 1, // Always ensure innings is a number
                 currentInnings: fixture.innings && {
                     battingTeam: fixture.innings % 2 === 1 ? localTeam : visitorTeam,
                     bowlingTeam: fixture.innings % 2 === 1 ? visitorTeam : localTeam
@@ -221,7 +224,12 @@ export default function MatchDetails() {
                 matchCompleted: fixture.status === 'Finished',
                 oversCompleted: 0,
                 ballsCompleted: 0,
-                completedOvers: []
+                completedOvers: [],
+                // Initialize teamCompletedOvers with empty arrays for both teams
+                teamCompletedOvers: {
+                    [localTeam.id]: [],
+                    [visitorTeam.id]: []
+                }
             }
         };
         setMatch(matchData);

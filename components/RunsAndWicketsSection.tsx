@@ -1,6 +1,7 @@
+"use client"
 import RunsOptionsCard from "@/components/RunsOptionCard";
-import { useEffect, useState } from "react";
-
+import { useEffect, useState, useRef } from "react";
+// src/types/match.ts
 export interface Team {
   id: number;
   name: string;
@@ -20,16 +21,19 @@ export interface MatchStatus {
   tossCompleted: boolean;
   tossWinner?: Team;
   battingFirst?: Team;
-  innings?: number;
+  innings: number; // Non-optional
   currentInnings?: {
     battingTeam: Team;
     bowlingTeam: Team;
   };
   matchStarted: boolean;
   matchCompleted: boolean;
-  oversCompleted?: number;
-  ballsCompleted?: number;
-  completedOvers: number[]; // Track completed overs for current innings
+  oversCompleted: number; // Made non-optional
+  ballsCompleted: number; // Made non-optional
+  completedOvers: number[];
+  teamCompletedOvers: {
+    [key: number]: number[];
+  };
 }
 
 export interface Match {
@@ -44,6 +48,66 @@ export interface Match {
   score?: string;
   lineup?: Player[];
   status: MatchStatus;
+}
+
+export interface PlayerRunsDisplayData {
+  id: number;
+  name: string;
+  runs: number;
+  buttons: string[];
+}
+
+export interface PlayerWicketsDisplayData {
+  id: number;
+  name: string;
+  wickets: number;
+  buttons: string[];
+}
+
+export interface PlayerBoundariesDisplayData {
+  id: number;
+  name: string;
+  boundaries: number;
+  buttons: string[];
+}
+
+export interface BowlerRunsDisplayData {
+  id: number;
+  name: string;
+  runsConceded: number;
+  buttons: string[];
+}
+
+export interface RunsOptionsOption {
+  id: number;
+  label: string;
+  noOdds: number;
+  yesOdds: number;
+  marketType: string;
+}
+
+export interface RawApiPlayer {
+  id: number;
+  country_id: number;
+  firstname: string;
+  lastname: string;
+  fullname: string;
+  image_path: string;
+  dateofbirth: string;
+  gender: string;
+  battingstyle: string | null;
+  bowlingstyle: string | null;
+  position?: {
+    id: number;
+    name: string;
+  };
+  updated_at: string;
+  lineup?: {
+    team_id: number;
+    captain: boolean;
+    wicketkeeper: boolean;
+    substitution: boolean;
+  };
 }
 
 interface RunOption {
@@ -125,17 +189,30 @@ interface RunsSectionProps {
 }
 
 export function RunsSection({ match: initialMatch }: RunsSectionProps) {
+  // Initialize match with team completed overs tracking and ensure required fields are set
   const [match, setMatch] = useState<Match>({
     ...initialMatch,
     status: {
       ...initialMatch.status,
-      completedOvers: [] // Initialize completed overs array
+      innings: 1, // Default to first innings
+      oversCompleted: initialMatch.status.oversCompleted ?? 0,
+      ballsCompleted: initialMatch.status.ballsCompleted ?? 0,
+      completedOvers: initialMatch.status.completedOvers ?? [],
+      teamCompletedOvers: initialMatch.status.teamCompletedOvers ?? {
+        [initialMatch.localTeam.id]: [],
+        [initialMatch.visitorTeam.id]: []
+      }
     }
   });
+  
   const [isLoading, setIsLoading] = useState(false);
   const [allRunOptions, setAllRunOptions] = useState<RunOption[]>([]);
   const [displayedOptions, setDisplayedOptions] = useState<RunOption[]>([]);
   const [ballData, setBallData] = useState<any[]>([]);
+  
+  // For WebSocket connection
+  const webSocketRef = useRef<WebSocket | null>(null);
+  const [isWebSocketConnected, setIsWebSocketConnected] = useState(false);
   
   // Generate initial preset run options on component mount
   useEffect(() => {
@@ -148,44 +225,94 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     setDisplayedOptions(allOptions);
   }, [initialMatch.localTeam.name, initialMatch.visitorTeam.name, initialMatch.localTeam.id, initialMatch.visitorTeam.id]);
 
-  // Function to process ball data and update match status
+  // Function to get over number and ball number from ball value
+  const parseBallValue = (ballValue: number) => {
+    // The ball format is like 0.1, 0.2, ..., 0.6, 1.1, 1.2, etc.
+    // Where the integer part is the over number and decimal part is the ball number
+    const overNumber = Math.floor(ballValue);
+    const ballNumber = Math.round((ballValue % 1) * 10);
+    return { overNumber, ballNumber };
+  };
+
+  // Process ball data to update match status
   const processBallData = (balls: any[]) => {
     if (balls.length === 0) return;
     
-    // Get the latest ball
-    const latestBall = balls[balls.length - 1];
+    // Sort balls by ball number to ensure chronological order
+    const sortedBalls = [...balls].sort((a, b) => a.ball - b.ball);
     
-    // Calculate current over and ball
-    const ballValue = latestBall.ball;
-    const overNumber = Math.floor(ballValue);
-    const ballNumber = Math.round((ballValue % 1) * 10);
+    // Track the current innings and last processed ball
+    let currentInnings = 1;
+    let lastBall = { overNumber: 0, ballNumber: 0 };
     
-    // Determine if we're in a new innings
-    const isNewInnings = match.status.innings !== latestBall.fixture_id;
+    // Group balls by team to track completed overs for each team
+    const teamBalls: { [key: number]: any[] } = {};
     
-    setMatch(prevMatch => {
-      // Reset completed overs if it's a new innings
-      const completedOvers = isNewInnings ? [] : [...prevMatch.status.completedOvers];
-      
-      // Check if we've completed an over (ballNumber === 6 and it's not already marked as completed)
-      if (ballNumber === 6 && !completedOvers.includes(overNumber)) {
-        completedOvers.push(overNumber);
+    sortedBalls.forEach(ball => {
+      const teamId = ball.team_id;
+      if (!teamBalls[teamId]) {
+        teamBalls[teamId] = [];
       }
+      teamBalls[teamId].push(ball);
+    });
+    
+    // Process latest ball to get current match state
+    const latestBall = sortedBalls[sortedBalls.length - 1];
+    const { overNumber, ballNumber } = parseBallValue(latestBall.ball);
+    
+    // Determine current innings
+    currentInnings = latestBall.fixture_id;
+    lastBall = { overNumber, ballNumber };
+    
+    // Calculate completed overs for each team
+    const teamCompletedOvers: { [key: number]: number[] } = {};
+    
+    Object.entries(teamBalls).forEach(([teamIdStr, balls]) => {
+      const teamId = parseInt(teamIdStr);
+      teamCompletedOvers[teamId] = [];
+      
+      // Group balls by over
+      const oversBalls: { [over: number]: number[] } = {};
+      
+      balls.forEach(ball => {
+        const { overNumber, ballNumber } = parseBallValue(ball.ball);
+        if (!oversBalls[overNumber]) {
+          oversBalls[overNumber] = [];
+        }
+        oversBalls[overNumber].push(ballNumber);
+      });
+      
+      // Mark overs with 6 balls as completed
+      Object.entries(oversBalls).forEach(([overStr, balls]) => {
+        const over = parseInt(overStr);
+        // An over is complete if it has all 6 balls
+        if (balls.length === 6) {
+          teamCompletedOvers[teamId].push(over);
+        }
+      });
+    });
+    
+    // Update match status
+    setMatch(prevMatch => {
+      // Determine current batting and bowling teams
+      const battingTeamId = latestBall.team_id;
+      const battingTeam = battingTeamId === prevMatch.localTeam.id ? 
+        prevMatch.localTeam : prevMatch.visitorTeam;
+      const bowlingTeam = battingTeamId === prevMatch.localTeam.id ? 
+        prevMatch.visitorTeam : prevMatch.localTeam;
       
       return {
         ...prevMatch,
         status: {
           ...prevMatch.status,
-          oversCompleted: overNumber,
-          ballsCompleted: ballNumber,
           matchStarted: true,
-          completedOvers,
-          innings: latestBall.fixture_id,
+          innings: currentInnings,
+          oversCompleted: lastBall.overNumber,
+          ballsCompleted: lastBall.ballNumber,
+          teamCompletedOvers,
           currentInnings: {
-            battingTeam: latestBall.team_id === prevMatch.localTeam.id ? 
-              prevMatch.localTeam : prevMatch.visitorTeam,
-            bowlingTeam: latestBall.team_id === prevMatch.localTeam.id ? 
-              prevMatch.visitorTeam : prevMatch.localTeam
+            battingTeam,
+            bowlingTeam
           }
         }
       };
@@ -196,8 +323,9 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
   const fetchBallData = async () => {
     setIsLoading(true);
     try {
+      const apiToken = process.env.NEXT_PUBLIC_SPORTMONKS_API_TOKEN;
       const response = await fetch(
-        `https://cricket.sportmonks.com/api/v2.0/fixtures/${initialMatch.id}?api_token=${process.env.NEXT_PUBLIC_SPORTMONKS_API_TOKEN}&include=balls`
+        `https://cricket.sportmonks.com/api/v2.0/fixtures/${initialMatch.id}?api_token=${apiToken}&include=balls`
       );
       
       if (!response.ok) throw new Error('Failed to fetch ball data');
@@ -215,6 +343,96 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     }
   };
 
+  // WebSocket setup for real-time updates
+  useEffect(() => {
+    // Only set up WebSocket if it's not already connected
+    if (!isWebSocketConnected && !webSocketRef.current) {
+      const connectWebSocket = () => {
+        try {
+          // Replace with your actual WebSocket endpoint
+          const wsEndpoint = `wss://cricket-ws.sportmonks.com/socket?api_token=${process.env.NEXT_PUBLIC_SPORTMONKS_API_TOKEN}`;
+          const ws = new WebSocket(wsEndpoint);
+          
+          ws.onopen = () => {
+            console.log("WebSocket connected");
+            setIsWebSocketConnected(true);
+            
+            // Subscribe to updates for this match
+            ws.send(JSON.stringify({
+              action: "subscribe",
+              fixture_id: initialMatch.id
+            }));
+          };
+          
+          ws.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+              
+              // Check if this is ball data for our match
+              if (data.type === "ball" && data.data && data.data.fixture_id === initialMatch.id) {
+                // Add new ball to our ball data
+                setBallData(prevData => [...prevData, data.data]);
+                
+                // Re-process all ball data including the new ball
+                processBallData([...ballData, data.data]);
+              }
+            } catch (error) {
+              console.error("Error processing WebSocket message:", error);
+            }
+          };
+          
+          ws.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            setIsWebSocketConnected(false);
+          };
+          
+          ws.onclose = () => {
+            console.log("WebSocket connection closed");
+            setIsWebSocketConnected(false);
+            // Attempt to reconnect after a delay
+            setTimeout(connectWebSocket, 5000);
+          };
+          
+          webSocketRef.current = ws;
+        } catch (error) {
+          console.error("Error setting up WebSocket:", error);
+          setIsWebSocketConnected(false);
+        }
+      };
+      
+      connectWebSocket();
+    }
+    
+    // Clean up WebSocket on component unmount
+    return () => {
+      if (webSocketRef.current) {
+        webSocketRef.current.close();
+        webSocketRef.current = null;
+        setIsWebSocketConnected(false);
+      }
+    };
+  }, [initialMatch.id, ballData, isWebSocketConnected]);
+
+  // Fallback to polling if WebSocket is not connected
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+    
+    if (!isWebSocketConnected) {
+      // If WebSocket is not connected, fetch data via API polling
+      fetchBallData();
+      
+      const pollFrequency = match.status.matchStarted && !match.status.matchCompleted 
+        ? 10000  // 10 seconds during active match
+        : 60000; // 1 minute before/after match
+        
+      pollInterval = setInterval(fetchBallData, pollFrequency);
+    }
+    
+    return () => {
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  }, [match.status.matchStarted, match.status.matchCompleted, isWebSocketConnected]);
+
   // Update displayed options based on current match state
   useEffect(() => {
     if (!match.status.matchStarted) return;
@@ -222,7 +440,9 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     const currentBattingTeamId = match.status.currentInnings?.battingTeam.id;
     if (!currentBattingTeamId) return;
     
-    const completedOvers = match.status.completedOvers || [];
+    // Get completed overs for current batting team
+    const completedOvers = match.status.teamCompletedOvers[currentBattingTeamId] || [];
+    const currentOver = match.status.oversCompleted;
     
     // Filter options to show:
     // - For current batting team: only overs not yet completed and not in progress
@@ -235,7 +455,12 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
       // For current batting team
       if (option.teamId === currentBattingTeamId) {
         // Hide if the over is completed
-        return !completedOvers.includes(option.overNumber);
+        if (completedOvers.includes(option.overNumber)) return false;
+        
+        // Hide if the over is in progress (current over)
+        if (option.overNumber === currentOver && match.status.ballsCompleted > 0) return false;
+        
+        return true;
       }
       
       // For other team, show all overs
@@ -243,33 +468,17 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
     });
     
     setDisplayedOptions(filtered);
-  }, [match.status.completedOvers, match.status.currentInnings, allRunOptions]);
-
-  // Set up polling for ball data
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    
-    if (match.status.matchStarted && !match.status.matchCompleted) {
-      // Fetch more frequently during active play (every 10 seconds)
-      fetchBallData();
-      interval = setInterval(fetchBallData, 10000);
-    } else {
-      // Fetch less frequently before/after match (every minute)
-      fetchBallData();
-      interval = setInterval(fetchBallData, 60000);
-    }
-    
-    return () => clearInterval(interval);
-  }, [match.status.matchStarted, match.status.matchCompleted, initialMatch.id]);
+  }, [match.status, allRunOptions]);
 
   return (
     <div className="mb-8">
       <h2 className="text-xl md:text-2xl font-semibold text-white mb-4">
         Match Runs
         {isLoading && <span className="ml-2 text-sm text-gray-400">Updating...</span>}
+        {isWebSocketConnected && <span className="ml-2 text-sm text-green-400">• Live</span>}
       </h2>
       <RunsOptionsCard
-        key={`runs-${match.id}-${match.status.oversCompleted || 0}-${match.status.ballsCompleted || 0}`}
+        key={`runs-${match.id}-${match.status.oversCompleted}-${match.status.ballsCompleted}`}
         matchId={match.id}
         heading="Run Markets"
         options={displayedOptions}
@@ -278,10 +487,18 @@ export function RunsSection({ match: initialMatch }: RunsSectionProps) {
       {/* Display current match status */}
       {match.status.matchStarted && (
         <div className="text-sm text-gray-300 mt-2">
-          Current: {match.status.currentInnings?.battingTeam.name} batting, 
-          Over {match.status.oversCompleted}.{match.status.ballsCompleted}
-          {match.status.completedOvers.length > 0 && (
-            <span>, Completed overs: {match.status.completedOvers.join(', ')}</span>
+          <div>
+            Current: {match.status.currentInnings?.battingTeam.name} batting, 
+            Over {match.status.oversCompleted}.{match.status.ballsCompleted}
+          </div>
+          {match.status.currentInnings?.battingTeam && (
+            <div className="mt-1">
+              Completed overs for {match.status.currentInnings.battingTeam.name}: {
+                match.status.teamCompletedOvers[match.status.currentInnings.battingTeam.id]?.length > 0 
+                  ? match.status.teamCompletedOvers[match.status.currentInnings.battingTeam.id].sort((a, b) => a - b).join(', ')
+                  : 'None'
+              }
+            </div>
           )}
         </div>
       )}

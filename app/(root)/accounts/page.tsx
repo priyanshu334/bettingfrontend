@@ -1,156 +1,269 @@
-"use client"
-import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CalendarDays, Filter, ChevronLeft, ChevronRight } from "lucide-react";
+'use client';
 
-const AccountStatement = () => {
-  const [currentPage, setCurrentPage] = useState(2);
+import { useEffect, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useAuthStore } from '@/stores/authStore'; // Adjust path as needed
+import { ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Filter } from 'lucide-react';
+
+interface Transaction {
+  _id: string;
+  type: string;
+  amount: number;
+  createdAt: string;
+}
+
+interface HistoryResponse {
+  currentBalance: number;
+  totalTransactions: number;
+  page: number;
+  totalPages: number;
+  transactions: Transaction[];
+}
+
+export default function UserHistoryPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { user, token } = useAuthStore();
   
-  const data = [
-    { sNo: "01", date: "03-03-2025", credit: "2,000", debit: "1,000", balance: "1,000", sports: "Cricket", remarks: "Opening pts" },
-    { sNo: "02", date: "04-03-2025", credit: "2,000", debit: "-", balance: "2,000", sports: "Cricket", remarks: "Opening pts" },
-    { sNo: "03", date: "05-03-2025", credit: "2,000", debit: "0.00", balance: "0.00", sports: "Cricket", remarks: "Closing pts" },
-  ];
+  const [data, setData] = useState<HistoryResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   
-  return (
-    <div className="p-4 md:p-6 w-full mx-auto bg-gradient-to-br from-orange-50 to-orange-100 min-h-screen">
-      <Card className="shadow-xl border-0 overflow-hidden">
-        <CardHeader className="bg-gradient-to-r from-orange-500 to-orange-600 p-6 relative">
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute inset-0 bg-[url('/cricket-pattern.png')] bg-repeat"></div>
-          </div>
-          <div className="flex items-center space-x-3">
-            <div className="bg-white p-2 rounded-full">
+  // Get current filter parameters
+  const type = searchParams.get('type') || '';
+  const startDate = searchParams.get('startDate') || '';
+  const endDate = searchParams.get('endDate') || '';
+  const page = parseInt(searchParams.get('page') || '1', 10);
+  const limit = parseInt(searchParams.get('limit') || '10', 10);
+
+  const fetchHistory = async () => {
+    if (!user || !token) return;
     
-            </div>
-            <CardTitle className="text-2xl md:text-3xl font-bold text-white">Account Statement</CardTitle>
+    try {
+      setLoading(true);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/users/${user._id}/account-history?type=${type}&startDate=${startDate}&endDate=${endDate}&page=${page}&limit=${limit}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      
+      const json = await res.json();
+      setData(json);
+    } catch (error) {
+      console.error('Error fetching history:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  const handlePageChange = (newPage: number): void => {
+    const params = new URLSearchParams(searchParams);
+    params.set('page', newPage.toString());
+    router.push(`?${params.toString()}`);
+  };
+
+  const formatDate = (dateString: string): string => {
+    const date = new Date(dateString);
+    return new Intl.DateTimeFormat('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  };
+
+  const formatCurrency = (amount: number): string => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 2,
+    }).format(amount);
+  };
+
+  if (!user) {
+    return (
+      <div className="w-full max-w-3xl mx-auto mt-8 rounded-lg bg-red-50 border border-red-100 shadow-sm">
+        <div className="p-6">
+          <div className="text-center text-red-500 py-8">
+            <h3 className="text-lg font-medium">Authentication Required</h3>
+            <p className="mt-2">Please log in to view your transaction history.</p>
           </div>
-          <p className="text-orange-100 mt-2">View and track all your transactions</p>
-        </CardHeader>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="w-full max-w-4xl mx-auto mt-8 space-y-4 p-4">
+        <div className="w-full h-12 bg-slate-200 animate-pulse rounded-md"></div>
+        <div className="w-full h-24 bg-slate-200 animate-pulse rounded-md"></div>
+        <div className="w-full h-64 bg-slate-200 animate-pulse rounded-md"></div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="w-full max-w-3xl mx-auto mt-8 rounded-lg bg-red-50 border border-red-100 shadow-sm">
+        <div className="p-6">
+          <div className="text-center text-red-500 py-8">
+            <h3 className="text-lg font-medium">Data Load Error</h3>
+            <p className="mt-2">Unable to fetch your transaction history. Please try again later.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Calculate summary statistics
+  const deposits = data.transactions.filter(t => t.type === 'deposit' || t.amount > 0);
+  const withdrawals = data.transactions.filter(t => t.type === 'withdrawal' || t.amount < 0);
+  
+  const totalDeposits = deposits.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+  const totalWithdrawals = withdrawals.reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  return (
+    <div className="w-full max-w-5xl mx-auto mt-8 px-4">
+      <h1 className="text-2xl font-bold mb-6">Account Transaction History</h1>
+      
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div className="pb-2">
+            <p className="text-sm text-slate-500">Current Balance</p>
+            <p className="text-2xl font-bold text-blue-600">
+              {formatCurrency(data.currentBalance)}
+            </p>
+          </div>
+        </div>
         
-        <CardContent className="p-4 md:p-6">
-          {/* Filters */}
-          <div className="bg-orange-50 p-4 rounded-xl mb-6 border border-orange-100 shadow-sm">
-            <h3 className="text-orange-800 font-semibold mb-3 flex items-center">
-              <Filter className="w-4 h-4 mr-2" /> Filter Transactions
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="relative">
-                <CalendarDays className="absolute left-3 top-3 h-4 w-4 text-orange-400" />
-                <Input 
-                  type="date" 
-                  placeholder="From Date" 
-                  className="pl-10 border-orange-200 focus:border-orange-500 focus:ring-orange-500" 
-                />
-              </div>
-              <div className="relative">
-                <CalendarDays className="absolute left-3 top-3 h-4 w-4 text-orange-400" />
-                <Input 
-                  type="date" 
-                  placeholder="To Date" 
-                  className="pl-10 border-orange-200 focus:border-orange-500 focus:ring-orange-500" 
-                />
-              </div>
-              <Select>
-                <SelectTrigger className="border-orange-200 focus:border-orange-500 focus:ring-orange-500">
-                  <SelectValue placeholder="Transaction Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Withdraw">Withdraw</SelectItem>
-                  <SelectItem value="Deposit">Deposit</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button className="bg-orange-600 hover:bg-orange-700 text-white font-bold transition-all duration-200 shadow-md hover:shadow-lg">
-                Apply Filter
-              </Button>
-            </div>
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div className="pb-2">
+            <p className="text-sm text-slate-500 flex items-center">
+              <ArrowDown className="w-4 h-4 mr-1 text-green-500" />
+              Total Deposits
+            </p>
+            <p className="text-2xl font-bold text-green-600">
+              {formatCurrency(totalDeposits)}
+            </p>
           </div>
-          
-          {/* Table */}
-          <div className="overflow-x-auto rounded-xl border border-orange-200 shadow-md">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gradient-to-r from-orange-500 to-orange-600 text-white">
-                  {['S.no', 'Date', 'Credit', 'Debit', 'Balance', 'Sports', 'Remarks'].map((heading) => (
-                    <th key={heading} className="p-3 text-left font-semibold first:rounded-tl-lg last:rounded-tr-lg">
-                      {heading}
-                    </th>
-                  ))}
+        </div>
+        
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+          <div className="pb-2">
+            <p className="text-sm text-slate-500 flex items-center">
+              <ArrowUp className="w-4 h-4 mr-1 text-red-500" />
+              Total Withdrawals
+            </p>
+            <p className="text-2xl font-bold text-red-600">
+              {formatCurrency(totalWithdrawals)}
+            </p>
+          </div>
+        </div>
+      </div>
+      
+      {/* Main Transaction Table */}
+      <div className="bg-white rounded-lg shadow-sm border border-slate-200">
+        <div className="p-4 border-b border-slate-200">
+          <div className="flex justify-between items-center">
+            <h2 className="text-lg font-semibold">Transactions</h2>
+            <button className="py-1 px-3 text-sm border border-slate-200 rounded-md flex items-center gap-1 hover:bg-slate-50">
+              <Filter className="w-4 h-4" />
+              Filter
+            </button>
+          </div>
+          <p className="text-sm text-slate-500 mt-1">
+            Showing {data.transactions.length} of {data.totalTransactions} transactions
+          </p>
+        </div>
+        
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-slate-50">
+                <th className="text-left p-4 font-medium border-b border-slate-200">Type</th>
+                <th className="text-left p-4 font-medium border-b border-slate-200">Amount</th>
+                <th className="text-left p-4 font-medium border-b border-slate-200">Date & Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.transactions.map((txn) => (
+                <tr key={txn._id} className="hover:bg-slate-50">
+                  <td className="p-4 border-b border-slate-100">
+                    <span 
+                      className={`py-1 px-2 rounded-full text-xs font-medium ${
+                        txn.type === 'deposit' || txn.amount > 0 
+                          ? "bg-green-50 text-green-700" 
+                          : "bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {txn.type.charAt(0).toUpperCase() + txn.type.slice(1)}
+                    </span>
+                  </td>
+                  <td className={`p-4 border-b border-slate-100 font-medium ${
+                    txn.type === 'deposit' || txn.amount > 0 
+                      ? "text-green-600" 
+                      : "text-red-600"
+                  }`}>
+                    {txn.type === 'deposit' || txn.amount > 0 ? '+' : '-'} {formatCurrency(Math.abs(txn.amount))}
+                  </td>
+                  <td className="p-4 border-b border-slate-100 text-slate-500">
+                    {formatDate(txn.createdAt)}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {data.map((row, index) => (
-                  <tr key={row.sNo} className={index % 2 === 0 ? "bg-white hover:bg-orange-50" : "bg-orange-50 hover:bg-orange-100"}>
-                    <td className="p-3 text-center font-medium border-b border-orange-100">{row.sNo}</td>
-                    <td className="p-3 border-b border-orange-100">{row.date}</td>
-                    <td className="p-3 text-center font-medium text-green-600 border-b border-orange-100">{row.credit}</td>
-                    <td className="p-3 text-center font-medium text-red-600 border-b border-orange-100">{row.debit}</td>
-                    <td className="p-3 text-center font-medium text-orange-600 border-b border-orange-100">{row.balance}</td>
-                    <td className="p-3 border-b border-orange-100">{row.sports}</td>
-                    <td className="p-3 border-b border-orange-100">{row.remarks}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+              
+              {data.transactions.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="text-center py-8 text-slate-500 border-b border-slate-100">
+                    No transactions found matching your criteria
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between p-4 border-t border-slate-200">
+          <p className="text-sm text-slate-500">
+            Page {data.page} of {data.totalPages}
+          </p>
           
-          {/* Pagination */}
-          <div className="flex flex-col md:flex-row items-center justify-between mt-6 bg-orange-50 p-3 rounded-lg border border-orange-100">
-            <div className="text-sm text-orange-800 mb-4 md:mb-0">
-              Showing page {currentPage} of 5
-            </div>
-            <div className="flex items-center space-x-2">
-              <Button 
-                variant="outline" 
-                className="border border-orange-300 text-orange-700 hover:bg-orange-100"
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" /> Previous
-              </Button>
-              <div className="flex items-center space-x-1">
-                {[1, 2, 3, 4, 5].map(page => (
-                  <Button 
-                    key={page}
-                    variant={currentPage === page ? "default" : "outline"}
-                    className={`w-10 h-10 ${currentPage === page ? 'bg-orange-600 text-white' : 'border border-orange-300 text-orange-700 hover:bg-orange-100'}`}
-                    onClick={() => setCurrentPage(page)}
-                  >
-                    {page}
-                  </Button>
-                ))}
-              </div>
-              <Button 
-                variant="outline" 
-                className="border border-orange-300 text-orange-700 hover:bg-orange-100"
-                onClick={() => setCurrentPage(prev => Math.min(5, prev + 1))}
-              >
-                Next <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
+          <div className="flex gap-2">
+            <button
+              className={`p-1 rounded-md border border-slate-200 ${
+                data.page <= 1 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+              onClick={() => data.page > 1 && handlePageChange(data.page - 1)}
+              disabled={data.page <= 1}
+            >
+              <ChevronLeft className="h-5 w-5" />
+              <span className="sr-only">Previous Page</span>
+            </button>
+            
+            <button
+              className={`p-1 rounded-md border border-slate-200 ${
+                data.page >= data.totalPages ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-50'
+              }`}
+              onClick={() => data.page < data.totalPages && handlePageChange(data.page + 1)}
+              disabled={data.page >= data.totalPages}
+            >
+              <ChevronRight className="h-5 w-5" />
+              <span className="sr-only">Next Page</span>
+            </button>
           </div>
-          
-          {/* Summary Card */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-gradient-to-br from-green-500 to-green-600 p-4 rounded-xl text-white shadow-md">
-              <p className="text-green-100 text-sm">Total Credit</p>
-              <p className="text-2xl font-bold">₹6,000</p>
-            </div>
-            <div className="bg-gradient-to-br from-red-500 to-red-600 p-4 rounded-xl text-white shadow-md">
-              <p className="text-red-100 text-sm">Total Debit</p>
-              <p className="text-2xl font-bold">₹1,000</p>
-            </div>
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-4 rounded-xl text-white shadow-md">
-              <p className="text-orange-100 text-sm">Current Balance</p>
-              <p className="text-2xl font-bold">₹5,000</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
-};
-
-export default AccountStatement;
+}
